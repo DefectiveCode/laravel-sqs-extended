@@ -18,4 +18,4 @@ jobs:
               run: npx prettier --check "{!(vendor|node_modules)/**/*,*}.{js,ts,jsx,tsx,vue,xml,json,blade.php,css,md,yml,html}"
 
             - name: Pint
-              uses: aglipanci/laravel-pint-action@2.3.1
+              uses: aglipanci/laravel-pint-action@2.4
