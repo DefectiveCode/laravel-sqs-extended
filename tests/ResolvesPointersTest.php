@@ -29,37 +29,37 @@ final class ResolvesPointersTest extends TestCase
 
     public function test_it_returns_null_when_body_is_empty(): void
     {
-        $s = $this->makeSubject(['Body' => '']);
-        $this->assertNull($this->callResolvePointer($s));
+        $subject = $this->makeSubject(['Body' => '']);
+        $this->assertNull($this->callResolvePointer($subject));
     }
 
     public function test_it_returns_null_when_body_is_invalid_json(): void
     {
-        $s = $this->makeSubject(['Body' => '{']);
-        $this->assertNull($this->callResolvePointer($s));
+        $subject = $this->makeSubject(['Body' => '{']);
+        $this->assertNull($this->callResolvePointer($subject));
     }
 
     public function test_it_returns_null_when_pointer_is_missing(): void
     {
-        $s = $this->makeSubject(['Body' => json_encode((object) ['foo' => 'bar'])]);
-        $this->assertNull($this->callResolvePointer($s));
+        $subject = $this->makeSubject(['Body' => json_encode((object) ['foo' => 'bar'])]);
+        $this->assertNull($this->callResolvePointer($subject));
     }
 
     public function test_it_returns_pointer_string_when_present(): void
     {
-        $s = $this->makeSubject(['Body' => json_encode((object) ['pointer' => 'manuals/a.pdf'])]);
-        $this->assertSame('manuals/a.pdf', $this->callResolvePointer($s));
+        $subject = $this->makeSubject(['Body' => json_encode((object) ['pointer' => 'manuals/a.pdf'])]);
+        $this->assertSame('manuals/a.pdf', $this->callResolvePointer($subject));
     }
 
     public function test_it_casts_numeric_pointer_to_string(): void
     {
-        $s = $this->makeSubject(['Body' => json_encode((object) ['pointer' => 12345])]);
-        $this->assertSame('12345', $this->callResolvePointer($s));
+        $subject = $this->makeSubject(['Body' => json_encode((object) ['pointer' => 12345])]);
+        $this->assertSame('12345', $this->callResolvePointer($subject));
     }
 
     public function test_it_resolves_the_configured_disk_adapter(): void
     {
-        $s = $this->makeSubject(['Body' => '{}'], ['disk' => 'archive']);
+        $subject = $this->makeSubject(['Body' => '{}'], ['disk' => 'archive']);
 
         $manager = Mockery::mock(FilesystemManager::class);
         $adapter = Mockery::mock(FilesystemAdapter::class);
@@ -69,22 +69,24 @@ final class ResolvesPointersTest extends TestCase
             ->with('archive')
             ->andReturn($adapter);
 
-        $s->container->instance('filesystem', $manager);
+        $subject->container->instance('filesystem', $manager);
 
-        $this->assertSame($adapter, $this->callResolveDisk($s));
+        $this->assertSame($adapter, $this->callResolveDisk($subject));
     }
 
     private function callResolvePointer(object $obj): ?string
     {
-        $m = new ReflectionMethod($obj, 'resolvePointer');
-        $m->setAccessible(true);
-        return $m->invoke($obj);
+        $method = new ReflectionMethod($obj, 'resolvePointer');
+        $method->setAccessible(true);
+
+        return $method->invoke($obj);
     }
 
     private function callResolveDisk(object $obj): FilesystemAdapter
     {
-        $m = new ReflectionMethod($obj, 'resolveDisk');
-        $m->setAccessible(true);
-        return $m->invoke($obj);
+        $method = new ReflectionMethod($obj, 'resolveDisk');
+        $method->setAccessible(true);
+
+        return $method->invoke($obj);
     }
 }
