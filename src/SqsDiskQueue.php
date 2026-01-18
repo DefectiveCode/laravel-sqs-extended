@@ -66,11 +66,14 @@ class SqsDiskQueue extends SqsQueue
         ];
 
         if (strlen($payload) >= self::MAX_SQS_LENGTH || Arr::get($this->diskOptions, 'always_store')) {
-            $uuid = json_decode($payload)->uuid;
-            $filepath = Arr::get($this->diskOptions, 'prefix', '')."/{$uuid}.json";
+            $decodedPayload = json_decode($payload);
+            $filepath = Arr::get($this->diskOptions, 'prefix', '')."/{$decodedPayload->uuid}.json";
             $this->resolveDisk()->put($filepath, $payload);
 
-            $message['MessageBody'] = json_encode(['pointer' => $filepath]);
+            $message['MessageBody'] = json_encode([
+                'pointer' => $filepath,
+                'job' => $decodedPayload->job ?? null,
+            ]);
         }
 
         if ($delay) {
