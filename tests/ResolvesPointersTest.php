@@ -7,57 +7,46 @@ namespace DefectiveCode\LaravelSqsExtended\Tests;
 use Mockery;
 use ReflectionMethod;
 use Illuminate\Container\Container;
-use Illuminate\Contracts\Container\Container as ContainerContract;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Filesystem\FilesystemManager;
+use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
+use Illuminate\Contracts\Container\Container as ContainerContract;
 
-final class ResolvesPointersTest extends TestCase
+class ResolvesPointersTest extends TestCase
 {
-    private function makeSubject(array $job, array $diskOptions = ['disk' => 's3'])
-    {
-        return new class ($job, $diskOptions) {
-            use \DefectiveCode\LaravelSqsExtended\ResolvesPointers;
+    use MockeryPHPUnitIntegration;
 
-            public ContainerContract $container;
-
-            public function __construct(public array $job, public array $diskOptions)
-            {
-                $this->container = new Container();
-            }
-        };
-    }
-
-    public function test_it_returns_null_when_body_is_empty(): void
+    public function testItReturnsNullWhenBodyIsEmpty(): void
     {
         $subject = $this->makeSubject(['Body' => '']);
         $this->assertNull($this->callResolvePointer($subject));
     }
 
-    public function test_it_returns_null_when_body_is_invalid_json(): void
+    public function testItReturnsNullWhenBodyIsInvalidJson(): void
     {
         $subject = $this->makeSubject(['Body' => '{']);
         $this->assertNull($this->callResolvePointer($subject));
     }
 
-    public function test_it_returns_null_when_pointer_is_missing(): void
+    public function testItReturnsNullWhenPointerIsMissing(): void
     {
         $subject = $this->makeSubject(['Body' => json_encode((object) ['foo' => 'bar'])]);
         $this->assertNull($this->callResolvePointer($subject));
     }
 
-    public function test_it_returns_pointer_string_when_present(): void
+    public function testItReturnsPointerStringWhenPresent(): void
     {
         $subject = $this->makeSubject(['Body' => json_encode((object) ['pointer' => 'manuals/a.pdf'])]);
         $this->assertSame('manuals/a.pdf', $this->callResolvePointer($subject));
     }
 
-    public function test_it_casts_numeric_pointer_to_string(): void
+    public function testItCastsNumericPointerToString(): void
     {
         $subject = $this->makeSubject(['Body' => json_encode((object) ['pointer' => 12345])]);
         $this->assertSame('12345', $this->callResolvePointer($subject));
     }
 
-    public function test_it_resolves_the_configured_disk_adapter(): void
+    public function testItResolvesTheConfiguredDiskAdapter(): void
     {
         $subject = $this->makeSubject(['Body' => '{}'], ['disk' => 'archive']);
 
@@ -74,7 +63,22 @@ final class ResolvesPointersTest extends TestCase
         $this->assertSame($adapter, $this->callResolveDisk($subject));
     }
 
-    private function callResolvePointer(object $obj): ?string
+    protected function makeSubject(array $job, array $diskOptions = ['disk' => 's3'])
+    {
+        return new class($job, $diskOptions)
+        {
+            use \DefectiveCode\LaravelSqsExtended\ResolvesPointers;
+
+            public ContainerContract $container;
+
+            public function __construct(public array $job, public array $diskOptions)
+            {
+                $this->container = new Container;
+            }
+        };
+    }
+
+    protected function callResolvePointer(object $obj): ?string
     {
         $method = new ReflectionMethod($obj, 'resolvePointer');
         $method->setAccessible(true);
@@ -82,7 +86,7 @@ final class ResolvesPointersTest extends TestCase
         return $method->invoke($obj);
     }
 
-    private function callResolveDisk(object $obj): FilesystemAdapter
+    protected function callResolveDisk(object $obj): FilesystemAdapter
     {
         $method = new ReflectionMethod($obj, 'resolveDisk');
         $method->setAccessible(true);
