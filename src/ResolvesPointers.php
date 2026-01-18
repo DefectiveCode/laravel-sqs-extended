@@ -14,7 +14,21 @@ trait ResolvesPointers
      */
     protected function resolvePointer(): ?string
     {
-        return json_decode($this->job['Body'])->pointer ?? null;
+        $body = $this->job['Body'] ?? null;
+        if (! is_string($body) || $body === '') {
+            return null;
+        }
+
+        $decoded = json_decode($body);
+        if (! is_object($decoded) || ! property_exists($decoded, 'pointer')) {
+            return null;
+        }
+
+        $pointer = $decoded->pointer;
+
+        return is_string($pointer)
+            ? $pointer
+            : (is_scalar($pointer) ? (string) $pointer : null);
     }
 
     /**
