@@ -287,4 +287,47 @@ class SqsDiskQueueTest extends TestCase
         $sqsDiskQueue->setContainer($this->mockedContainer);
         $sqsDiskQueue->clear('default');
     }
+
+    public function testItFallsBackToHashedFilenameWhenUuidIsMissing(): void
+    {
+        $payload = json_encode(['job' => 'foo', 'data' => ['data']]);
+        $expectedUuid = hash('sha256', (string) $payload);
+        $expectedPointerPayload = json_encode([
+            'pointer' => "prefix/{$expectedUuid}.json",
+            'job' => 'foo',
+        ]);
+
+        $this->mockedFilesystemAdapter->shouldReceive('disk')
+            ->with('s3')
+            ->andReturnSelf();
+
+        $this->mockedFilesystemAdapter->shouldReceive('put')
+            ->with("prefix/{$expectedUuid}.json", $payload)
+            ->once();
+
+        $this->mockedContainer->shouldReceive('make')
+            ->with('filesystem')
+            ->andReturn($this->mockedFilesystemAdapter);
+
+        $this->mockedSqsClient->shouldReceive('sendMessage')
+            ->with([
+                'QueueUrl' => '/default',
+                'MessageBody' => $expectedPointerPayload,
+            ])
+            ->once()
+            ->andReturnSelf();
+
+        $this->mockedSqsClient->shouldReceive('get')->once();
+
+        $diskOptions = [
+            'always_store' => true,
+            'cleanup' => true,
+            'disk' => 's3',
+            'prefix' => 'prefix',
+        ];
+
+        $sqsDiskQueue = new SqsDiskQueue($this->mockedSqsClient, 'default', $diskOptions);
+        $sqsDiskQueue->setContainer($this->mockedContainer);
+        $sqsDiskQueue->pushRaw($payload);
+    }
 }
