@@ -65,7 +65,7 @@ class SqsDiskQueue extends SqsQueue
             'MessageBody' => $payload,
         ];
 
-        if (strlen($payload) >= self::MAX_SQS_LENGTH || Arr::get($this->diskOptions, 'always_store')) {
+        if (strlen($payload) >= Arr::get($this->diskOptions, 'max_sqs_length', self::MAX_SQS_LENGTH) || Arr::get($this->diskOptions, 'always_store')) {
             $decodedPayload = json_decode($payload);
             $filepath = Arr::get($this->diskOptions, 'prefix', '')."/{$decodedPayload->uuid}.json";
             $this->resolveDisk()->put($filepath, $payload);
