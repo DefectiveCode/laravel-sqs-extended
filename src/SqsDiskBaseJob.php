@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace DefectiveCode\LaravelSqsExtended;
 
 use Aws\Sqs\SqsClient;
-use Illuminate\Support\Arr;
 use Illuminate\Container\Container;
+use Illuminate\Support\Arr;
 
 trait SqsDiskBaseJob
 {
@@ -30,7 +30,7 @@ trait SqsDiskBaseJob
      * Holds the raw body to prevent fetching the file from
      * the disk multiple times.
      */
-    protected string $cachedRawBody = '';
+    protected $cachedRawBody = null;
 
     /**
      * The disk options for the job.

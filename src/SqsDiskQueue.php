@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace DefectiveCode\LaravelSqsExtended;
 
-use DateInterval;
 use Aws\Sqs\SqsClient;
+use DateInterval;
 use DateTimeInterface;
-use Illuminate\Support\Arr;
-use Illuminate\Queue\SqsQueue;
 use Illuminate\Contracts\Queue\Job;
+use Illuminate\Queue\SqsQueue;
+use Illuminate\Support\Arr;
 
 class SqsDiskQueue extends SqsQueue
 {
@@ -136,7 +136,7 @@ class SqsDiskQueue extends SqsQueue
      * @param  string  $queue
      * @return int
      */
-    public function clear($queue)
+    public function clear($queue = null)
     {
         return tap(parent::clear($queue), function (): void {
             if (Arr::get($this->diskOptions, 'cleanup') && Arr::get($this->diskOptions, 'prefix')) {
