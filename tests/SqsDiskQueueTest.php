@@ -6,6 +6,7 @@ namespace DefectiveCode\LaravelSqsExtended\Tests;
 
 use Mockery;
 use Aws\Result;
+use ArrayObject;
 use Aws\Command;
 use Aws\Sqs\SqsClient;
 use Aws\Exception\AwsException;
@@ -231,12 +232,7 @@ class SqsDiskQueueTest extends TestCase
         $this->mockedFilesystemAdapter->shouldReceive('disk')
             ->never();
 
-        $this->mockedSqsClient->shouldReceive('sendMessageBatch')
-            ->with(Mockery::on(function ($arguments) {
-                return json_decode($arguments['Entries'][0]['MessageBody'])->job === 'foo';
-            }))
-            ->once()
-            ->andReturn(new Result(['Successful' => []]));
+        $bodies = $this->captureBatchedMessageBodies();
 
         $diskOptions = [
             'always_store' => false,
@@ -248,6 +244,10 @@ class SqsDiskQueueTest extends TestCase
         $sqsDiskQueue = new SqsDiskQueue($this->mockedSqsClient, 'default', $diskOptions);
         $sqsDiskQueue->setContainer($this->mockedContainer);
         $sqsDiskQueue->bulk(['foo']);
+
+        $this->assertCount(1, $bodies);
+        $this->assertEquals('foo', json_decode($bodies[0])->job);
+        $this->assertObjectNotHasProperty('pointer', json_decode($bodies[0]));
     }
 
     public function testItPushesLargeBatchedPayloadsToADisk(): void
@@ -263,14 +263,7 @@ class SqsDiskQueueTest extends TestCase
             ->with('filesystem')
             ->andReturn($this->mockedFilesystemAdapter);
 
-        $this->mockedSqsClient->shouldReceive('sendMessageBatch')
-            ->with(Mockery::on(function ($arguments) {
-                $body = json_decode($arguments['Entries'][0]['MessageBody']);
-
-                return isset($body->pointer) && $body->job === 'foo';
-            }))
-            ->once()
-            ->andReturn(new Result(['Successful' => []]));
+        $bodies = $this->captureBatchedMessageBodies();
 
         $diskOptions = [
             'always_store' => false,
@@ -282,6 +275,12 @@ class SqsDiskQueueTest extends TestCase
         $sqsDiskQueue = new SqsDiskQueue($this->mockedSqsClient, 'default', $diskOptions);
         $sqsDiskQueue->setContainer($this->mockedContainer);
         $sqsDiskQueue->bulk(['foo'], [base64_encode(random_bytes(262144))]);
+
+        $this->assertCount(1, $bodies);
+
+        $decodedBody = json_decode($bodies[0]);
+        $this->assertEquals('foo', $decodedBody->job);
+        $this->assertNotNull($decodedBody->pointer);
     }
 
     public function testItKeepsPayloadsInlineWhenTheQueueAllowsALargerMaximumMessageSize(): void
@@ -493,5 +492,40 @@ class SqsDiskQueueTest extends TestCase
         $sqsDiskQueue = new SqsDiskQueue($this->mockedSqsClient, 'default', $diskOptions);
         $sqsDiskQueue->setContainer($this->mockedContainer);
         $sqsDiskQueue->clear('default');
+    }
+
+    /**
+     * Collect the bodies bulk() sends, whichever SQS API the framework reaches for.
+     *
+     * Laravel dispatches batches through SendMessageBatch from 13.19 onward, and
+     * one SendMessage per job before that.
+     */
+    protected function captureBatchedMessageBodies(): ArrayObject
+    {
+        $bodies = new ArrayObject;
+
+        $this->mockedSqsClient->shouldReceive('sendMessage')
+            ->with(Mockery::on(function ($arguments) use ($bodies) {
+                $bodies->append($arguments['MessageBody']);
+
+                return true;
+            }))
+            ->andReturnSelf();
+
+        $this->mockedSqsClient->shouldReceive('get')
+            ->with('MessageId')
+            ->andReturn('message-id');
+
+        $this->mockedSqsClient->shouldReceive('sendMessageBatch')
+            ->with(Mockery::on(function ($arguments) use ($bodies) {
+                foreach ($arguments['Entries'] as $entry) {
+                    $bodies->append($entry['MessageBody']);
+                }
+
+                return true;
+            }))
+            ->andReturn(new Result(['Successful' => []]));
+
+        return $bodies;
     }
 }
