@@ -6,7 +6,10 @@ namespace DefectiveCode\LaravelSqsExtended\Tests;
 
 use Mockery;
 use Aws\Result;
+use ArrayObject;
+use Aws\Command;
 use Aws\Sqs\SqsClient;
+use Aws\Exception\AwsException;
 use Illuminate\Container\Container;
 use Illuminate\Filesystem\FilesystemAdapter;
 use DefectiveCode\LaravelSqsExtended\SqsDiskJob;
@@ -57,6 +60,8 @@ class SqsDiskQueueTest extends TestCase
         $this->mockedSqsClient = Mockery::mock(SqsClient::class);
         $this->mockedFilesystemAdapter = Mockery::mock(FilesystemAdapter::class);
         $this->mockedContainer = Mockery::mock(Container::class)->makePartial();
+
+        $this->allowQueueMaxSize($this->mockedSqsClient, '/default');
     }
 
     public function testItDoesntPushToADiskIfTheAlwaysStoreIsDisabledAndThePayloadIsntLarge(): void
@@ -222,6 +227,207 @@ class SqsDiskQueueTest extends TestCase
         $sqsDiskQueue->later(10, 'foo');
     }
 
+    public function testItDoesntPushBatchedPayloadsToADiskWhenTheyArentLarge(): void
+    {
+        $this->mockedFilesystemAdapter->shouldReceive('disk')
+            ->never();
+
+        $bodies = $this->captureBatchedMessageBodies();
+
+        $diskOptions = [
+            'always_store' => false,
+            'cleanup' => true,
+            'disk' => 's3',
+            'prefix' => 'prefix',
+        ];
+
+        $sqsDiskQueue = new SqsDiskQueue($this->mockedSqsClient, 'default', $diskOptions);
+        $sqsDiskQueue->setContainer($this->mockedContainer);
+        $sqsDiskQueue->bulk(['foo']);
+
+        $this->assertCount(1, $bodies);
+        $this->assertEquals('foo', json_decode($bodies[0])->job);
+        $this->assertObjectNotHasProperty('pointer', json_decode($bodies[0]));
+    }
+
+    public function testItPushesLargeBatchedPayloadsToADisk(): void
+    {
+        $this->mockedFilesystemAdapter->shouldReceive('disk')
+            ->with('s3')
+            ->andReturnSelf();
+
+        $this->mockedFilesystemAdapter->shouldReceive('put')
+            ->once();
+
+        $this->mockedContainer->shouldReceive('make')
+            ->with('filesystem')
+            ->andReturn($this->mockedFilesystemAdapter);
+
+        $bodies = $this->captureBatchedMessageBodies();
+
+        $diskOptions = [
+            'always_store' => false,
+            'cleanup' => true,
+            'disk' => 's3',
+            'prefix' => 'prefix',
+        ];
+
+        $sqsDiskQueue = new SqsDiskQueue($this->mockedSqsClient, 'default', $diskOptions);
+        $sqsDiskQueue->setContainer($this->mockedContainer);
+        $sqsDiskQueue->bulk(['foo'], [base64_encode(random_bytes(262144))]);
+
+        $this->assertCount(1, $bodies);
+
+        $decodedBody = json_decode($bodies[0]);
+        $this->assertEquals('foo', $decodedBody->job);
+        $this->assertNotNull($decodedBody->pointer);
+    }
+
+    public function testItKeepsPayloadsInlineWhenTheQueueAllowsALargerMaximumMessageSize(): void
+    {
+        $sqsClient = Mockery::mock(SqsClient::class);
+        $this->allowQueueMaxSize($sqsClient, '/default', 1048576);
+
+        $this->mockedFilesystemAdapter->shouldReceive('disk')
+            ->never();
+
+        $sqsClient->shouldReceive('sendMessage')
+            ->with([
+                'QueueUrl' => '/default',
+                'MessageBody' => $this->mockedLargePayload,
+            ])
+            ->once()
+            ->andReturnSelf();
+
+        $sqsClient->shouldReceive('get')
+            ->once();
+
+        $diskOptions = [
+            'always_store' => false,
+            'cleanup' => true,
+            'disk' => 's3',
+            'prefix' => 'prefix',
+        ];
+
+        $sqsDiskQueue = new SqsDiskQueue($sqsClient, 'default', $diskOptions);
+        $sqsDiskQueue->setContainer($this->mockedContainer);
+        $sqsDiskQueue->pushRaw($this->mockedLargePayload);
+    }
+
+    public function testItPrefersTheConfiguredMaxSizeOverTheQueueAttribute(): void
+    {
+        $sqsClient = Mockery::mock(SqsClient::class);
+        $sqsClient->shouldNotReceive('getQueueAttributes');
+
+        $this->mockedFilesystemAdapter->shouldReceive('disk')
+            ->with('s3')
+            ->andReturnSelf();
+
+        $this->mockedFilesystemAdapter->shouldReceive('put')
+            ->with('prefix/e3cd03ee-59a3-4ad8-b0aa-ee2e3808ac81.json', $this->mockedPayload)
+            ->once();
+
+        $this->mockedContainer->shouldReceive('make')
+            ->with('filesystem')
+            ->andReturn($this->mockedFilesystemAdapter);
+
+        $sqsClient->shouldReceive('sendMessage')
+            ->with([
+                'QueueUrl' => '/default',
+                'MessageBody' => $this->mockedPointerPayload,
+            ])
+            ->once()
+            ->andReturnSelf();
+
+        $sqsClient->shouldReceive('get')
+            ->once();
+
+        $diskOptions = [
+            'always_store' => false,
+            'cleanup' => true,
+            'disk' => 's3',
+            'prefix' => 'prefix',
+            'max_size' => 10,
+        ];
+
+        $sqsDiskQueue = new SqsDiskQueue($sqsClient, 'default', $diskOptions);
+        $sqsDiskQueue->setContainer($this->mockedContainer);
+        $sqsDiskQueue->pushRaw($this->mockedPayload);
+    }
+
+    public function testItFallsBackToTheDefaultMaxLengthWhenTheQueueAttributeIsUnreadable(): void
+    {
+        $sqsClient = Mockery::mock(SqsClient::class);
+
+        $sqsClient->shouldReceive('getQueueAttributes')
+            ->once()
+            ->andThrow(new AwsException('Access denied', new Command('GetQueueAttributes')));
+
+        $this->mockedFilesystemAdapter->shouldReceive('disk')
+            ->with('s3')
+            ->andReturnSelf();
+
+        $this->mockedFilesystemAdapter->shouldReceive('put')
+            ->with('prefix/e3cd03ee-59a3-4ad8-b0aa-ee2e3808ac81.json', $this->mockedLargePayload)
+            ->once();
+
+        $this->mockedContainer->shouldReceive('make')
+            ->with('filesystem')
+            ->andReturn($this->mockedFilesystemAdapter);
+
+        $sqsClient->shouldReceive('sendMessage')
+            ->with([
+                'QueueUrl' => '/default',
+                'MessageBody' => $this->mockedPointerPayload,
+            ])
+            ->once()
+            ->andReturnSelf();
+
+        $sqsClient->shouldReceive('get')
+            ->once();
+
+        $diskOptions = [
+            'always_store' => false,
+            'cleanup' => true,
+            'disk' => 's3',
+            'prefix' => 'prefix',
+        ];
+
+        $sqsDiskQueue = new SqsDiskQueue($sqsClient, 'default', $diskOptions);
+        $sqsDiskQueue->setContainer($this->mockedContainer);
+        $sqsDiskQueue->pushRaw($this->mockedLargePayload);
+    }
+
+    public function testItOnlyReadsTheQueueAttributeOncePerQueue(): void
+    {
+        $sqsClient = Mockery::mock(SqsClient::class);
+
+        $sqsClient->shouldReceive('getQueueAttributes')
+            ->once()
+            ->andReturn(new Result([
+                'Attributes' => ['MaximumMessageSize' => '262144'],
+            ]));
+
+        $sqsClient->shouldReceive('sendMessage')
+            ->twice()
+            ->andReturnSelf();
+
+        $sqsClient->shouldReceive('get')
+            ->twice();
+
+        $diskOptions = [
+            'always_store' => false,
+            'cleanup' => true,
+            'disk' => 's3',
+            'prefix' => 'prefix',
+        ];
+
+        $sqsDiskQueue = new SqsDiskQueue($sqsClient, 'default', $diskOptions);
+        $sqsDiskQueue->setContainer($this->mockedContainer);
+        $sqsDiskQueue->pushRaw($this->mockedPayload);
+        $sqsDiskQueue->pushRaw($this->mockedPayload);
+    }
+
     public function testItCreatesANewSqsDiskJobWhenPopped(): void
     {
         $this->mockedSqsClient->shouldReceive('receiveMessage')
@@ -286,5 +492,40 @@ class SqsDiskQueueTest extends TestCase
         $sqsDiskQueue = new SqsDiskQueue($this->mockedSqsClient, 'default', $diskOptions);
         $sqsDiskQueue->setContainer($this->mockedContainer);
         $sqsDiskQueue->clear('default');
+    }
+
+    /**
+     * Collect the bodies bulk() sends, whichever SQS API the framework reaches for.
+     *
+     * Laravel dispatches batches through SendMessageBatch from 13.19 onward, and
+     * one SendMessage per job before that.
+     */
+    protected function captureBatchedMessageBodies(): ArrayObject
+    {
+        $bodies = new ArrayObject;
+
+        $this->mockedSqsClient->shouldReceive('sendMessage')
+            ->with(Mockery::on(function ($arguments) use ($bodies) {
+                $bodies->append($arguments['MessageBody']);
+
+                return true;
+            }))
+            ->andReturnSelf();
+
+        $this->mockedSqsClient->shouldReceive('get')
+            ->with('MessageId')
+            ->andReturn('message-id');
+
+        $this->mockedSqsClient->shouldReceive('sendMessageBatch')
+            ->with(Mockery::on(function ($arguments) use ($bodies) {
+                foreach ($arguments['Entries'] as $entry) {
+                    $bodies->append($entry['MessageBody']);
+                }
+
+                return true;
+            }))
+            ->andReturn(new Result(['Successful' => []]));
+
+        return $bodies;
     }
 }

@@ -53,9 +53,11 @@ class SqsDiskQueue extends SqsQueue
      */
     public function pushRaw($payload, $queue = null, array $options = [], $delay = 0)
     {
+        $queueUrl = $this->getQueue($queue);
+
         $message = [
-            'QueueUrl' => $this->getQueue($queue),
-            'MessageBody' => $this->resolveMessageBody($payload),
+            'QueueUrl' => $queueUrl,
+            'MessageBody' => $this->resolveMessageBody($payload, $queueUrl),
         ];
 
         if ($delay) {
@@ -85,6 +87,21 @@ class SqsDiskQueue extends SqsQueue
                 return $this->pushRaw($payload, $queue, [], $delay);
             }
         );
+    }
+
+    /**
+     * Build a single entry for the SendMessageBatch API.
+     *
+     * @param  string  $id
+     * @param  string|null  $queue
+     * @return array
+     */
+    protected function prepareSendMessageBatchEntry($id, array $message, $queue)
+    {
+        return [
+            ...parent::prepareSendMessageBatchEntry($id, $message, $queue),
+            'MessageBody' => $this->resolveMessageBody($message['payload'], $this->getQueue($queue)),
+        ];
     }
 
     /**
