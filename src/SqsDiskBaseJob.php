@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace DefectiveCode\LaravelSqsExtended;
 
 use Aws\Sqs\SqsClient;
-use Illuminate\Container\Container;
 use Illuminate\Support\Arr;
+use Illuminate\Container\Container;
 
 trait SqsDiskBaseJob
 {

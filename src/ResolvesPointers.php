@@ -5,10 +5,37 @@ declare(strict_types=1);
 namespace DefectiveCode\LaravelSqsExtended;
 
 use Illuminate\Support\Arr;
+use League\Flysystem\UnableToWriteFile;
 use Illuminate\Filesystem\FilesystemAdapter;
 
 trait ResolvesPointers
 {
+    /**
+     * The max length of a SQS message before it must be stored as a pointer.
+     *
+     * @var int
+     */
+    public const MAX_SQS_LENGTH = 250000;
+
+    protected function resolveMessageBody(string $payload): string
+    {
+        if (strlen($payload) < self::MAX_SQS_LENGTH && ! Arr::get($this->diskOptions, 'always_store')) {
+            return $payload;
+        }
+
+        $decodedPayload = json_decode($payload);
+        $filepath = Arr::get($this->diskOptions, 'prefix', '')."/{$decodedPayload->uuid}.json";
+
+        if ($this->resolveDisk()->put($filepath, $payload) === false) {
+            throw UnableToWriteFile::atLocation($filepath);
+        }
+
+        return json_encode([
+            'pointer' => $filepath,
+            'job' => $decodedPayload->job ?? null,
+        ]);
+    }
+
     /**
      * Resolves the job payload pointer.
      */

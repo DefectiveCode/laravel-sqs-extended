@@ -6,6 +6,7 @@ namespace DefectiveCode\LaravelSqsExtended;
 
 use Aws\Sqs\SqsClient;
 use Illuminate\Support\Arr;
+use Illuminate\Contracts\Queue\Queue;
 use Illuminate\Queue\Connectors\SqsConnector;
 use Illuminate\Queue\Connectors\ConnectorInterface;
 
@@ -15,7 +16,7 @@ class SqsDiskConnector extends SqsConnector implements ConnectorInterface
      * Establish a queue connection.
      *
      *
-     * @return \Illuminate\Contracts\Queue\Queue
+     * @return Queue
      */
     public function connect(array $config)
     {
