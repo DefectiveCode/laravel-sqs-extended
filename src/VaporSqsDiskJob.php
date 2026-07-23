@@ -20,7 +20,7 @@ class VaporSqsDiskJob extends VaporJob implements JobContract
 
         $payload['attempts'] = $this->attempts();
 
-        $body = $this->resolveMessageBody(json_encode($payload));
+        $body = $this->resolveMessageBody(json_encode($payload), $this->queue);
 
         $this->sqs->deleteMessage([
             'QueueUrl' => $this->queue,

@@ -6,7 +6,9 @@ namespace DefectiveCode\LaravelSqsExtended\Tests;
 
 use Mockery;
 use Aws\Result;
+use Aws\Command;
 use Aws\Sqs\SqsClient;
+use Aws\Exception\AwsException;
 use Illuminate\Container\Container;
 use Illuminate\Filesystem\FilesystemAdapter;
 use DefectiveCode\LaravelSqsExtended\SqsDiskJob;
@@ -57,6 +59,8 @@ class SqsDiskQueueTest extends TestCase
         $this->mockedSqsClient = Mockery::mock(SqsClient::class);
         $this->mockedFilesystemAdapter = Mockery::mock(FilesystemAdapter::class);
         $this->mockedContainer = Mockery::mock(Container::class)->makePartial();
+
+        $this->allowQueueMaxSize($this->mockedSqsClient, '/default');
     }
 
     public function testItDoesntPushToADiskIfTheAlwaysStoreIsDisabledAndThePayloadIsntLarge(): void
@@ -220,6 +224,209 @@ class SqsDiskQueueTest extends TestCase
         $sqsDiskQueue = new SqsDiskQueue($this->mockedSqsClient, 'default', $diskOptions);
         $sqsDiskQueue->setContainer($this->mockedContainer);
         $sqsDiskQueue->later(10, 'foo');
+    }
+
+    public function testItDoesntPushBatchedPayloadsToADiskWhenTheyArentLarge(): void
+    {
+        $this->mockedFilesystemAdapter->shouldReceive('disk')
+            ->never();
+
+        $this->mockedSqsClient->shouldReceive('sendMessageBatch')
+            ->with(Mockery::on(function ($arguments) {
+                return json_decode($arguments['Entries'][0]['MessageBody'])->job === 'foo';
+            }))
+            ->once()
+            ->andReturn(new Result(['Successful' => []]));
+
+        $diskOptions = [
+            'always_store' => false,
+            'cleanup' => true,
+            'disk' => 's3',
+            'prefix' => 'prefix',
+        ];
+
+        $sqsDiskQueue = new SqsDiskQueue($this->mockedSqsClient, 'default', $diskOptions);
+        $sqsDiskQueue->setContainer($this->mockedContainer);
+        $sqsDiskQueue->bulk(['foo']);
+    }
+
+    public function testItPushesLargeBatchedPayloadsToADisk(): void
+    {
+        $this->mockedFilesystemAdapter->shouldReceive('disk')
+            ->with('s3')
+            ->andReturnSelf();
+
+        $this->mockedFilesystemAdapter->shouldReceive('put')
+            ->once();
+
+        $this->mockedContainer->shouldReceive('make')
+            ->with('filesystem')
+            ->andReturn($this->mockedFilesystemAdapter);
+
+        $this->mockedSqsClient->shouldReceive('sendMessageBatch')
+            ->with(Mockery::on(function ($arguments) {
+                $body = json_decode($arguments['Entries'][0]['MessageBody']);
+
+                return isset($body->pointer) && $body->job === 'foo';
+            }))
+            ->once()
+            ->andReturn(new Result(['Successful' => []]));
+
+        $diskOptions = [
+            'always_store' => false,
+            'cleanup' => true,
+            'disk' => 's3',
+            'prefix' => 'prefix',
+        ];
+
+        $sqsDiskQueue = new SqsDiskQueue($this->mockedSqsClient, 'default', $diskOptions);
+        $sqsDiskQueue->setContainer($this->mockedContainer);
+        $sqsDiskQueue->bulk(['foo'], [base64_encode(random_bytes(262144))]);
+    }
+
+    public function testItKeepsPayloadsInlineWhenTheQueueAllowsALargerMaximumMessageSize(): void
+    {
+        $sqsClient = Mockery::mock(SqsClient::class);
+        $this->allowQueueMaxSize($sqsClient, '/default', 1048576);
+
+        $this->mockedFilesystemAdapter->shouldReceive('disk')
+            ->never();
+
+        $sqsClient->shouldReceive('sendMessage')
+            ->with([
+                'QueueUrl' => '/default',
+                'MessageBody' => $this->mockedLargePayload,
+            ])
+            ->once()
+            ->andReturnSelf();
+
+        $sqsClient->shouldReceive('get')
+            ->once();
+
+        $diskOptions = [
+            'always_store' => false,
+            'cleanup' => true,
+            'disk' => 's3',
+            'prefix' => 'prefix',
+        ];
+
+        $sqsDiskQueue = new SqsDiskQueue($sqsClient, 'default', $diskOptions);
+        $sqsDiskQueue->setContainer($this->mockedContainer);
+        $sqsDiskQueue->pushRaw($this->mockedLargePayload);
+    }
+
+    public function testItPrefersTheConfiguredMaxSizeOverTheQueueAttribute(): void
+    {
+        $sqsClient = Mockery::mock(SqsClient::class);
+        $sqsClient->shouldNotReceive('getQueueAttributes');
+
+        $this->mockedFilesystemAdapter->shouldReceive('disk')
+            ->with('s3')
+            ->andReturnSelf();
+
+        $this->mockedFilesystemAdapter->shouldReceive('put')
+            ->with('prefix/e3cd03ee-59a3-4ad8-b0aa-ee2e3808ac81.json', $this->mockedPayload)
+            ->once();
+
+        $this->mockedContainer->shouldReceive('make')
+            ->with('filesystem')
+            ->andReturn($this->mockedFilesystemAdapter);
+
+        $sqsClient->shouldReceive('sendMessage')
+            ->with([
+                'QueueUrl' => '/default',
+                'MessageBody' => $this->mockedPointerPayload,
+            ])
+            ->once()
+            ->andReturnSelf();
+
+        $sqsClient->shouldReceive('get')
+            ->once();
+
+        $diskOptions = [
+            'always_store' => false,
+            'cleanup' => true,
+            'disk' => 's3',
+            'prefix' => 'prefix',
+            'max_size' => 10,
+        ];
+
+        $sqsDiskQueue = new SqsDiskQueue($sqsClient, 'default', $diskOptions);
+        $sqsDiskQueue->setContainer($this->mockedContainer);
+        $sqsDiskQueue->pushRaw($this->mockedPayload);
+    }
+
+    public function testItFallsBackToTheDefaultMaxLengthWhenTheQueueAttributeIsUnreadable(): void
+    {
+        $sqsClient = Mockery::mock(SqsClient::class);
+
+        $sqsClient->shouldReceive('getQueueAttributes')
+            ->once()
+            ->andThrow(new AwsException('Access denied', new Command('GetQueueAttributes')));
+
+        $this->mockedFilesystemAdapter->shouldReceive('disk')
+            ->with('s3')
+            ->andReturnSelf();
+
+        $this->mockedFilesystemAdapter->shouldReceive('put')
+            ->with('prefix/e3cd03ee-59a3-4ad8-b0aa-ee2e3808ac81.json', $this->mockedLargePayload)
+            ->once();
+
+        $this->mockedContainer->shouldReceive('make')
+            ->with('filesystem')
+            ->andReturn($this->mockedFilesystemAdapter);
+
+        $sqsClient->shouldReceive('sendMessage')
+            ->with([
+                'QueueUrl' => '/default',
+                'MessageBody' => $this->mockedPointerPayload,
+            ])
+            ->once()
+            ->andReturnSelf();
+
+        $sqsClient->shouldReceive('get')
+            ->once();
+
+        $diskOptions = [
+            'always_store' => false,
+            'cleanup' => true,
+            'disk' => 's3',
+            'prefix' => 'prefix',
+        ];
+
+        $sqsDiskQueue = new SqsDiskQueue($sqsClient, 'default', $diskOptions);
+        $sqsDiskQueue->setContainer($this->mockedContainer);
+        $sqsDiskQueue->pushRaw($this->mockedLargePayload);
+    }
+
+    public function testItOnlyReadsTheQueueAttributeOncePerQueue(): void
+    {
+        $sqsClient = Mockery::mock(SqsClient::class);
+
+        $sqsClient->shouldReceive('getQueueAttributes')
+            ->once()
+            ->andReturn(new Result([
+                'Attributes' => ['MaximumMessageSize' => '262144'],
+            ]));
+
+        $sqsClient->shouldReceive('sendMessage')
+            ->twice()
+            ->andReturnSelf();
+
+        $sqsClient->shouldReceive('get')
+            ->twice();
+
+        $diskOptions = [
+            'always_store' => false,
+            'cleanup' => true,
+            'disk' => 's3',
+            'prefix' => 'prefix',
+        ];
+
+        $sqsDiskQueue = new SqsDiskQueue($sqsClient, 'default', $diskOptions);
+        $sqsDiskQueue->setContainer($this->mockedContainer);
+        $sqsDiskQueue->pushRaw($this->mockedPayload);
+        $sqsDiskQueue->pushRaw($this->mockedPayload);
     }
 
     public function testItCreatesANewSqsDiskJobWhenPopped(): void

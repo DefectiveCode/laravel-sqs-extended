@@ -19,7 +19,9 @@
 
 # Introduction
 
-Laravel SQS extended is a Laravel queue driver that was designed to work around the AWS SQS 256KB payload size limits. This queue driver will automatically serialize large payloads to a disk (typically S3) and then unserialize them at run time.
+Laravel SQS extended is a Laravel queue driver that was designed to work around the AWS SQS payload size limits. This queue driver will automatically serialize large payloads to a disk (typically S3) and then unserialize them at run time.
+
+The threshold is read from the queue's own `MaximumMessageSize` attribute, so queues raised to the 1 MiB maximum offload only what genuinely will not fit. Set `disk_options.max_size` to pin it to a fixed byte count instead, which also skips the attribute lookup.
 
 # Documentation
 

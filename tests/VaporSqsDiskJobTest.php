@@ -34,6 +34,9 @@ class VaporSqsDiskJobTest extends TestCase
         $this->mockedSqsClient = Mockery::mock(SqsClient::class);
         $this->mockedFilesystemAdapter = Mockery::mock(FilesystemAdapter::class);
         $this->mockedContainer = Mockery::mock(Container::class)->makePartial();
+
+        $this->allowQueueMaxSize($this->mockedSqsClient, '/default');
+        $this->allowQueueMaxSize($this->mockedSqsClient, 'queue');
     }
 
     public function testOldPointerFormatFailsVaporDetection(): void
