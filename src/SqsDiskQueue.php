@@ -4,23 +4,16 @@ declare(strict_types=1);
 
 namespace DefectiveCode\LaravelSqsExtended;
 
-use Aws\Sqs\SqsClient;
 use DateInterval;
+use Aws\Sqs\SqsClient;
 use DateTimeInterface;
-use Illuminate\Contracts\Queue\Job;
-use Illuminate\Queue\SqsQueue;
 use Illuminate\Support\Arr;
+use Illuminate\Queue\SqsQueue;
+use Illuminate\Contracts\Queue\Job;
 
 class SqsDiskQueue extends SqsQueue
 {
     use ResolvesPointers;
-
-    /**
-     * The max length of a SQS message before it must be stored as a pointer.
-     *
-     * @var int
-     */
-    public const MAX_SQS_LENGTH = 250000;
 
     /**
      * The disk options to save large payloads.
@@ -62,19 +55,8 @@ class SqsDiskQueue extends SqsQueue
     {
         $message = [
             'QueueUrl' => $this->getQueue($queue),
-            'MessageBody' => $payload,
+            'MessageBody' => $this->resolveMessageBody($payload),
         ];
-
-        if (strlen($payload) >= self::MAX_SQS_LENGTH || Arr::get($this->diskOptions, 'always_store')) {
-            $decodedPayload = json_decode($payload);
-            $filepath = Arr::get($this->diskOptions, 'prefix', '')."/{$decodedPayload->uuid}.json";
-            $this->resolveDisk()->put($filepath, $payload);
-
-            $message['MessageBody'] = json_encode([
-                'pointer' => $filepath,
-                'job' => $decodedPayload->job ?? null,
-            ]);
-        }
 
         if ($delay) {
             $message['DelaySeconds'] = $this->secondsUntil($delay);

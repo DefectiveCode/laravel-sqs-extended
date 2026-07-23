@@ -9,6 +9,7 @@ use ReflectionMethod;
 use Illuminate\Container\Container;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Filesystem\FilesystemManager;
+use DefectiveCode\LaravelSqsExtended\ResolvesPointers;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 use Illuminate\Contracts\Container\Container as ContainerContract;
 
@@ -67,7 +68,7 @@ class ResolvesPointersTest extends TestCase
     {
         return new class($job, $diskOptions)
         {
-            use \DefectiveCode\LaravelSqsExtended\ResolvesPointers;
+            use ResolvesPointers;
 
             public ContainerContract $container;
 

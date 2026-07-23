@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DefectiveCode\LaravelSqsExtended;
 
+use Laravel\Vapor\Queue\VaporJob;
 use Laravel\Vapor\Console\Commands\VaporWorkCommand as LaravelVaporWorkCommand;
 
 class VaporWorkCommand extends LaravelVaporWorkCommand
@@ -12,7 +13,7 @@ class VaporWorkCommand extends LaravelVaporWorkCommand
      * Marshal the job with the given message ID.
      *
      *
-     * @return \Laravel\Vapor\Queue\VaporJob
+     * @return VaporJob
      */
     protected function marshalJob(array $message)
     {
