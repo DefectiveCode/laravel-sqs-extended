@@ -1,23 +1,30 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <phpunit
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.5/phpunit.xsd"
+    xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
     bootstrap="vendor/autoload.php"
     colors="true"
+    failOnAllIssues="true"
+    beStrictAboutOutputDuringTests="true"
 >
-  <testsuites>
-    <testsuite name="Unit">
-      <directory suffix="Test.php">./tests</directory>
-    </testsuite>
-  </testsuites>
-  <php>
-    <server name="APP_ENV" value="testing" />
-    <server name="APP_KEY" value="AckfSECXIvnK5r28GVIWUAxmbBSjTsmF" />
-    <server name="RAY_ENABLED" value="(true)" />
-  </php>
-  <source>
-    <include>
-      <directory suffix=".php">./src</directory>
-    </include>
-  </source>
+    <testsuites>
+        <testsuite name="Unit">
+            <directory suffix="Test.php">tests</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory suffix=".php">src</directory>
+        </include>
+    </source>
+    <php>
+        <ini name="date.timezone" value="UTC" />
+        <server name="APP_ENV" value="testing" />
+        <server name="CACHE_STORE" value="array" />
+        <server name="SESSION_DRIVER" value="array" />
+        <server name="MAIL_MAILER" value="array" />
+        <server name="QUEUE_CONNECTION" value="sync" />
+        <server name="APP_KEY" value="AckfSECXIvnK5r28GVIWUAxmbBSjTsmF" />
+        <server name="RAY_ENABLED" value="(true)" />
+    </php>
 </phpunit>

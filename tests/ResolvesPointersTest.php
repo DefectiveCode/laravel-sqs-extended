@@ -6,12 +6,12 @@ namespace DefectiveCode\LaravelSqsExtended\Tests;
 
 use Mockery;
 use ReflectionMethod;
+use Aws\Sqs\SqsClient;
 use Illuminate\Container\Container;
-use Illuminate\Filesystem\FilesystemAdapter;
-use Illuminate\Filesystem\FilesystemManager;
-use DefectiveCode\LaravelSqsExtended\ResolvesPointers;
+use Illuminate\Contracts\Filesystem\Factory;
+use Illuminate\Contracts\Filesystem\Filesystem;
+use DefectiveCode\LaravelSqsExtended\SqsDiskJob;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
-use Illuminate\Contracts\Container\Container as ContainerContract;
 
 class ResolvesPointersTest extends TestCase
 {
@@ -19,79 +19,75 @@ class ResolvesPointersTest extends TestCase
 
     public function testItReturnsNullWhenBodyIsEmpty(): void
     {
-        $subject = $this->makeSubject(['Body' => '']);
+        $subject = $this->makeJob('');
         $this->assertNull($this->callResolvePointer($subject));
     }
 
     public function testItReturnsNullWhenBodyIsInvalidJson(): void
     {
-        $subject = $this->makeSubject(['Body' => '{']);
+        $subject = $this->makeJob('{');
         $this->assertNull($this->callResolvePointer($subject));
     }
 
     public function testItReturnsNullWhenPointerIsMissing(): void
     {
-        $subject = $this->makeSubject(['Body' => json_encode((object) ['foo' => 'bar'])]);
+        $subject = $this->makeJob(json_encode((object) ['foo' => 'bar'], JSON_THROW_ON_ERROR));
         $this->assertNull($this->callResolvePointer($subject));
     }
 
     public function testItReturnsPointerStringWhenPresent(): void
     {
-        $subject = $this->makeSubject(['Body' => json_encode((object) ['pointer' => 'manuals/a.pdf'])]);
+        $subject = $this->makeJob(json_encode((object) ['pointer' => 'manuals/a.pdf'], JSON_THROW_ON_ERROR));
         $this->assertSame('manuals/a.pdf', $this->callResolvePointer($subject));
     }
 
     public function testItCastsNumericPointerToString(): void
     {
-        $subject = $this->makeSubject(['Body' => json_encode((object) ['pointer' => 12345])]);
+        $subject = $this->makeJob(json_encode((object) ['pointer' => 12345], JSON_THROW_ON_ERROR));
         $this->assertSame('12345', $this->callResolvePointer($subject));
     }
 
     public function testItResolvesTheConfiguredDiskAdapter(): void
     {
-        $subject = $this->makeSubject(['Body' => '{}'], ['disk' => 'archive']);
-
-        $manager = Mockery::mock(FilesystemManager::class);
-        $adapter = Mockery::mock(FilesystemAdapter::class);
+        $manager = Mockery::mock(Factory::class);
+        $disk = Mockery::mock(Filesystem::class);
 
         $manager->shouldReceive('disk')
             ->once()
             ->with('archive')
-            ->andReturn($adapter);
+            ->andReturn($disk);
 
-        $subject->container->instance('filesystem', $manager);
+        $container = new Container;
+        $container->instance(Factory::class, $manager);
 
-        $this->assertSame($adapter, $this->callResolveDisk($subject));
+        $subject = $this->makeJob('{}', $container, ['disk' => 'archive']);
+
+        $this->assertSame($disk, $this->callResolveDisk($subject));
     }
 
-    protected function makeSubject(array $job, array $diskOptions = ['disk' => 's3'])
+    /**
+     * @param  array{disk: string}  $diskOptions
+     */
+    protected function makeJob(string $body, Container $container = new Container, array $diskOptions = ['disk' => 's3']): SqsDiskJob
     {
-        return new class($job, $diskOptions)
-        {
-            use ResolvesPointers;
-
-            public ContainerContract $container;
-
-            public function __construct(public array $job, public array $diskOptions)
-            {
-                $this->container = new Container;
-            }
-        };
+        return new SqsDiskJob($container, Mockery::mock(SqsClient::class), ['Body' => $body], 'connection', 'queue', $diskOptions);
     }
 
     protected function callResolvePointer(object $obj): ?string
     {
         $method = new ReflectionMethod($obj, 'resolvePointer');
-        $method->setAccessible(true);
+        /** @var string|null $pointer */
+        $pointer = $method->invoke($obj);
 
-        return $method->invoke($obj);
+        return $pointer;
     }
 
-    protected function callResolveDisk(object $obj): FilesystemAdapter
+    protected function callResolveDisk(object $obj): Filesystem
     {
         $method = new ReflectionMethod($obj, 'resolveDisk');
-        $method->setAccessible(true);
+        /** @var Filesystem $disk */
+        $disk = $method->invoke($obj);
 
-        return $method->invoke($obj);
+        return $disk;
     }
 }

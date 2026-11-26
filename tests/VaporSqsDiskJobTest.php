@@ -10,6 +10,7 @@ use Mockery\MockInterface;
 use Illuminate\Container\Container;
 use Laravel\Vapor\Queue\JobAttempts;
 use League\Flysystem\UnableToWriteFile;
+use Illuminate\Contracts\Filesystem\Factory;
 use Illuminate\Filesystem\FilesystemAdapter;
 use DefectiveCode\LaravelSqsExtended\SqsDiskQueue;
 use DefectiveCode\LaravelSqsExtended\VaporSqsDiskJob;
@@ -19,11 +20,11 @@ class VaporSqsDiskJobTest extends TestCase
 {
     use MockeryPHPUnitIntegration;
 
-    protected SqsClient $mockedSqsClient;
+    protected SqsClient&MockInterface $mockedSqsClient;
 
-    protected FilesystemAdapter $mockedFilesystemAdapter;
+    protected FilesystemAdapter&MockInterface $mockedFilesystemAdapter;
 
-    protected Container $mockedContainer;
+    protected Container&MockInterface $mockedContainer;
 
     protected ?string $capturedMessageBody = null;
 
@@ -41,7 +42,7 @@ class VaporSqsDiskJobTest extends TestCase
 
     public function testOldPointerFormatFailsVaporDetection(): void
     {
-        $payload = json_encode(['pointer' => 'prefix/uuid.json']);
+        $payload = json_encode(['pointer' => 'prefix/uuid.json'], JSON_THROW_ON_ERROR);
 
         $this->assertFalse($this->simulateVaporQueueDetection($payload));
     }
@@ -51,7 +52,7 @@ class VaporSqsDiskJobTest extends TestCase
         $payload = json_encode([
             'pointer' => 'prefix/uuid.json',
             'job' => 'App\\Jobs\\ProcessPodcast',
-        ]);
+        ], JSON_THROW_ON_ERROR);
 
         $this->assertTrue($this->simulateVaporQueueDetection($payload));
     }
@@ -62,7 +63,7 @@ class VaporSqsDiskJobTest extends TestCase
             'uuid' => 'some-uuid',
             'job' => 'Illuminate\\Queue\\CallQueuedHandler@call',
             'data' => ['command' => 'serialized-command'],
-        ]);
+        ], JSON_THROW_ON_ERROR);
 
         $this->assertTrue($this->simulateVaporQueueDetection($payload));
     }
@@ -75,15 +76,17 @@ class VaporSqsDiskJobTest extends TestCase
             'uuid' => 'test-uuid-123',
             'job' => 'Illuminate\\Queue\\CallQueuedHandler@call',
             'data' => ['command' => base64_encode(random_bytes(262144))],
-        ]);
+        ], JSON_THROW_ON_ERROR);
 
         $this->createQueue()->pushRaw($payload);
 
+        $this->assertNotNull($this->capturedMessageBody);
         $this->assertTrue($this->simulateVaporQueueDetection($this->capturedMessageBody));
 
-        $decodedBody = json_decode($this->capturedMessageBody);
-        $this->assertEquals('queue-jobs/test-uuid-123.json', $decodedBody->pointer);
-        $this->assertEquals('Illuminate\\Queue\\CallQueuedHandler@call', $decodedBody->job);
+        $decodedBody = json_decode($this->capturedMessageBody, true);
+        $this->assertIsArray($decodedBody);
+        $this->assertEquals('queue-jobs/test-uuid-123.json', $decodedBody['pointer']);
+        $this->assertEquals('Illuminate\\Queue\\CallQueuedHandler@call', $decodedBody['job']);
     }
 
     public function testAlwaysStoreIncludesJobProperty(): void
@@ -94,15 +97,17 @@ class VaporSqsDiskJobTest extends TestCase
             'uuid' => 'small-uuid-456',
             'job' => 'App\\Jobs\\SmallJob',
             'data' => ['key' => 'value'],
-        ]);
+        ], JSON_THROW_ON_ERROR);
 
         $this->createQueue(alwaysStore: true)->pushRaw($payload);
 
+        $this->assertNotNull($this->capturedMessageBody);
         $this->assertTrue($this->simulateVaporQueueDetection($this->capturedMessageBody));
 
-        $decodedBody = json_decode($this->capturedMessageBody);
-        $this->assertNotNull($decodedBody->pointer);
-        $this->assertEquals('App\\Jobs\\SmallJob', $decodedBody->job);
+        $decodedBody = json_decode($this->capturedMessageBody, true);
+        $this->assertIsArray($decodedBody);
+        $this->assertNotNull($decodedBody['pointer']);
+        $this->assertEquals('App\\Jobs\\SmallJob', $decodedBody['job']);
     }
 
     public function testItReleasesAnOversizedPayloadAsAPointer(): void
@@ -111,7 +116,7 @@ class VaporSqsDiskJobTest extends TestCase
             'uuid' => 'release-uuid-123',
             'job' => 'Illuminate\\Queue\\CallQueuedHandler@call',
             'data' => ['command' => base64_encode(random_bytes(262144))],
-        ]);
+        ], JSON_THROW_ON_ERROR);
 
         $storedPayload = null;
 
@@ -125,7 +130,7 @@ class VaporSqsDiskJobTest extends TestCase
             ->andReturn($payload);
 
         $this->mockedFilesystemAdapter->shouldReceive('put')
-            ->with('queue-jobs/release-uuid-123.json', Mockery::on(function ($contents) use (&$storedPayload) {
+            ->with('queue-jobs/release-uuid-123.json', Mockery::on(function (string $contents) use (&$storedPayload) {
                 $storedPayload = $contents;
 
                 return true;
@@ -133,7 +138,7 @@ class VaporSqsDiskJobTest extends TestCase
             ->once();
 
         $this->mockedContainer->shouldReceive('make')
-            ->with('filesystem')
+            ->with(Factory::class)
             ->andReturn($this->mockedFilesystemAdapter);
 
         $this->expectJobAttemptsTransfer();
@@ -142,14 +147,19 @@ class VaporSqsDiskJobTest extends TestCase
         $this->createJob(json_encode([
             'pointer' => 'queue-jobs/release-uuid-123.json',
             'job' => 'Illuminate\\Queue\\CallQueuedHandler@call',
-        ]))->release();
+        ], JSON_THROW_ON_ERROR))->release();
 
-        $decodedBody = json_decode($this->capturedMessageBody);
+        $this->assertNotNull($this->capturedMessageBody);
+        $decodedBody = json_decode($this->capturedMessageBody, true);
+        $this->assertIsArray($decodedBody);
 
-        $this->assertEquals('queue-jobs/release-uuid-123.json', $decodedBody->pointer);
-        $this->assertEquals('Illuminate\\Queue\\CallQueuedHandler@call', $decodedBody->job);
+        $this->assertEquals('queue-jobs/release-uuid-123.json', $decodedBody['pointer']);
+        $this->assertEquals('Illuminate\\Queue\\CallQueuedHandler@call', $decodedBody['job']);
         $this->assertLessThan(VaporSqsDiskJob::MAX_SQS_LENGTH, strlen($this->capturedMessageBody));
-        $this->assertEquals(1, json_decode($storedPayload)->attempts);
+        $this->assertIsString($storedPayload);
+        $decodedPayload = json_decode($storedPayload, true);
+        $this->assertIsArray($decodedPayload);
+        $this->assertEquals(1, $decodedPayload['attempts']);
     }
 
     public function testItReleasesASmallPayloadInline(): void
@@ -158,10 +168,10 @@ class VaporSqsDiskJobTest extends TestCase
             'uuid' => 'release-uuid-456',
             'job' => 'App\\Jobs\\SmallJob',
             'data' => ['key' => 'value'],
-        ]);
+        ], JSON_THROW_ON_ERROR);
 
         $this->mockedContainer->shouldReceive('make')
-            ->with('filesystem')
+            ->with(Factory::class)
             ->never();
 
         $this->expectJobAttemptsTransfer();
@@ -169,11 +179,13 @@ class VaporSqsDiskJobTest extends TestCase
 
         $this->createJob($payload)->release();
 
-        $decodedBody = json_decode($this->capturedMessageBody);
+        $this->assertNotNull($this->capturedMessageBody);
+        $decodedBody = json_decode($this->capturedMessageBody, true);
+        $this->assertIsArray($decodedBody);
 
-        $this->assertEquals('release-uuid-456', $decodedBody->uuid);
-        $this->assertEquals(['key' => 'value'], (array) $decodedBody->data);
-        $this->assertEquals(1, $decodedBody->attempts);
+        $this->assertEquals('release-uuid-456', $decodedBody['uuid']);
+        $this->assertEquals(['key' => 'value'], $decodedBody['data']);
+        $this->assertEquals(1, $decodedBody['attempts']);
     }
 
     public function testItDoesNotDeleteTheMessageWhenTheDiskWriteFails(): void
@@ -182,7 +194,7 @@ class VaporSqsDiskJobTest extends TestCase
             'uuid' => 'release-uuid-789',
             'job' => 'Illuminate\\Queue\\CallQueuedHandler@call',
             'data' => ['command' => base64_encode(random_bytes(262144))],
-        ]);
+        ], JSON_THROW_ON_ERROR);
 
         $this->mockedFilesystemAdapter->shouldReceive('disk')
             ->with('s3')
@@ -198,7 +210,7 @@ class VaporSqsDiskJobTest extends TestCase
             ->andReturnFalse();
 
         $this->mockedContainer->shouldReceive('make')
-            ->with('filesystem')
+            ->with(Factory::class)
             ->andReturn($this->mockedFilesystemAdapter);
 
         $this->expectJobAttemptsGet();
@@ -211,7 +223,7 @@ class VaporSqsDiskJobTest extends TestCase
         $this->createJob(json_encode([
             'pointer' => 'queue-jobs/release-uuid-789.json',
             'job' => 'Illuminate\\Queue\\CallQueuedHandler@call',
-        ]))->release();
+        ], JSON_THROW_ON_ERROR))->release();
     }
 
     protected function expectReleaseSqsCalls(): void
@@ -220,7 +232,8 @@ class VaporSqsDiskJobTest extends TestCase
             ->once();
 
         $this->mockedSqsClient->shouldReceive('sendMessage')
-            ->with(Mockery::on(function ($arguments) {
+            ->with(Mockery::on(function (array $arguments) {
+                /** @var array{MessageBody: string} $arguments */
                 $this->capturedMessageBody = $arguments['MessageBody'];
 
                 return true;
@@ -283,10 +296,7 @@ class VaporSqsDiskJobTest extends TestCase
 
     protected function simulateVaporQueueDetection(string $body): bool
     {
-        $messageId = 'test-message-id';
-        $job = json_decode($body)->job ?? null;
-
-        return $messageId && $job;
+        return (bool) data_get(json_decode($body), 'job');
     }
 
     protected function setUpDiskStorageMocks(): void
@@ -299,11 +309,12 @@ class VaporSqsDiskJobTest extends TestCase
             ->once();
 
         $this->mockedContainer->shouldReceive('make')
-            ->with('filesystem')
+            ->with(Factory::class)
             ->andReturn($this->mockedFilesystemAdapter);
 
         $this->mockedSqsClient->shouldReceive('sendMessage')
-            ->with(Mockery::on(function ($arguments) {
+            ->with(Mockery::on(function (array $arguments) {
+                /** @var array{MessageBody: string} $arguments */
                 $this->capturedMessageBody = $arguments['MessageBody'];
 
                 return true;

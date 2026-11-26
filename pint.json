@@ -1,16 +1,16 @@
 {
-    "preset": "laravel",
-    "rules": {
-        "declare_strict_types": true,
-        "ordered_imports": {
-            "sort_algorithm": "length"
-        },
-        "no_extra_blank_lines": {
-            "tokens": ["return"]
-        },
-        "php_unit_method_casing": true,
-        "simplified_null_return": true,
-        "statement_indentation": true,
-        "void_return": true
-    }
+  "preset": "laravel",
+  "rules": {
+    "declare_strict_types": true,
+    "ordered_imports": {
+      "sort_algorithm": "length"
+    },
+    "no_extra_blank_lines": {
+      "tokens": ["return"]
+    },
+    "php_unit_method_casing": true,
+    "simplified_null_return": true,
+    "statement_indentation": true,
+    "void_return": true
+  }
 }

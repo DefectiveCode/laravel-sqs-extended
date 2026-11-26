@@ -6,7 +6,10 @@ namespace DefectiveCode\LaravelSqsExtended\Tests;
 
 use Mockery;
 use Aws\Sqs\SqsClient;
+use Mockery\MockInterface;
 use Illuminate\Container\Container;
+use League\Flysystem\UnableToReadFile;
+use Illuminate\Contracts\Filesystem\Factory;
 use Illuminate\Filesystem\FilesystemAdapter;
 use DefectiveCode\LaravelSqsExtended\SqsDiskJob;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
@@ -15,20 +18,23 @@ class SqsDiskJobTest extends TestCase
 {
     use MockeryPHPUnitIntegration;
 
+    /**
+     * @var array<string, mixed>
+     */
     private array $mockedJobData;
 
-    private SqsClient $mockedSqsClient;
+    private SqsClient&MockInterface $mockedSqsClient;
 
-    private FilesystemAdapter $mockedFilesystemAdapter;
+    private FilesystemAdapter&MockInterface $mockedFilesystemAdapter;
 
-    private Container $mockedContainer;
+    private Container&MockInterface $mockedContainer;
 
     protected function setUp(): void
     {
         $mockedPayload = json_encode([
             'pointer' => 'prefix/e3cd03ee-59a3-4ad8-b0aa-ee2e3808ac81.json',
             'job' => 'App\\Jobs\\SomeJob',
-        ]);
+        ], JSON_THROW_ON_ERROR);
         $mockedMessageId = 'e3cd03ee-59a3-4ad8-b0aa-ee2e3808ac81';
         $mockedReceiptHandle = '0NNAq8PwvXuWv5gMtS9DJ8qEdyiUwbAjpp45w2m6M4SJ1Y+PxCh7R930NRB8ylSacEmoSnW18bgd4nK\/O6ctE+VFVul4eD23mA07vVoSnPI4F\/voI1eNCp6Iax0ktGmhlNVzBwaZHEr91BRtqTRM3QKd2ASF8u+IQaSwyl\/DGK+P1+dqUOodvOVtExJwdyDLy1glZVgm85Yw9Jf5yZEEErqRwzYz\/qSigdvW4sm2l7e4phRol\/+IjMtovOyH\/ukueYdlVbQ4OshQLENhUKe7RNN5i6bE\/e5x9bnPhfj2gbM';
 
@@ -58,7 +64,7 @@ class SqsDiskJobTest extends TestCase
             ->andReturnSelf();
 
         $this->mockedContainer->shouldReceive('make')
-            ->with('filesystem')
+            ->with(Factory::class)
             ->once()
             ->andReturn($this->mockedFilesystemAdapter);
 
@@ -86,7 +92,7 @@ class SqsDiskJobTest extends TestCase
     public function testItLeavesTheJobOnTheDiskIfCleanupIsDisabled(): void
     {
         $this->mockedContainer->shouldReceive('make')
-            ->with('filesystem')
+            ->with(Factory::class)
             ->never();
 
         $this->mockedSqsClient->shouldReceive('deleteMessage')
@@ -111,13 +117,41 @@ class SqsDiskJobTest extends TestCase
         $sqsDiskJob->delete();
     }
 
+    public function testItThrowsWhenThePointedFileCannotBeRead(): void
+    {
+        $this->mockedFilesystemAdapter->shouldReceive('disk')
+            ->with('s3')
+            ->andReturnSelf();
+
+        $this->mockedFilesystemAdapter->shouldReceive('get')
+            ->once()
+            ->andReturnNull();
+
+        $this->mockedContainer->shouldReceive('make')
+            ->with(Factory::class)
+            ->andReturn($this->mockedFilesystemAdapter);
+
+        $sqsDiskJob = new SqsDiskJob(
+            $this->mockedContainer,
+            $this->mockedSqsClient,
+            $this->mockedJobData,
+            'connection',
+            'queue',
+            ['disk' => 's3']
+        );
+
+        $this->expectException(UnableToReadFile::class);
+
+        $sqsDiskJob->getRawBody();
+    }
+
     public function testItReturnsTheRawBodyFromTheDiskIfAPointerExists(): void
     {
         $jobData = json_encode([
             'job' => 'job',
             'data' => ['data'],
             'attempts' => 1,
-        ]);
+        ], JSON_THROW_ON_ERROR);
 
         $this->mockedFilesystemAdapter->shouldReceive('disk')
             ->with('s3')
@@ -129,7 +163,7 @@ class SqsDiskJobTest extends TestCase
             ->andReturn($jobData);
 
         $this->mockedContainer->shouldReceive('make')
-            ->with('filesystem')
+            ->with(Factory::class)
             ->andReturn($this->mockedFilesystemAdapter);
 
         $diskOptions = [

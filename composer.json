@@ -1,52 +1,60 @@
 {
-    "name": "defectivecode/laravel-sqs-extended",
-    "type": "laravel",
-    "license": "MIT",
-    "autoload": {
-        "psr-4": {
-            "DefectiveCode\\LaravelSqsExtended\\": "src"
-        }
-    },
-    "autoload-dev": {
-        "psr-4": {
-            "DefectiveCode\\LaravelSqsExtended\\Tests\\": "tests"
-        }
-    },
-    "authors": [
-        {
-            "name": "Corey McCormick",
-            "email": "corey@defectivecode.com"
-        }
-    ],
-    "suggest": {
-        "laravel/vapor-core": "Required for SQS disk-based storage when using Laravel Vapor."
-    },
-    "require": {
-        "php": "^8.4",
-        "aws/aws-sdk-php": "^3.368.0.0",
-        "illuminate/container": "^12.0 || ^13.0",
-        "illuminate/contracts": "^12.0 || ^13.0",
-        "illuminate/filesystem": "^12.0 || ^13.0",
-        "illuminate/queue": "^12.0 || ^13.0",
-        "illuminate/support": "^12.0 || ^13.0"
-    },
-    "require-dev": {
-        "laravel/pint": "^1.8",
-        "laravel/vapor-core": "^2.44",
-        "mockery/mockery": "^1.6",
-        "orchestra/testbench": "^10.0 || ^11.0",
-        "phpunit/phpunit": "^13.0"
-    },
-    "extra": {
-        "laravel": {
-            "providers": [
-                "DefectiveCode\\LaravelSqsExtended\\SqsDiskServiceProvider"
-            ]
-        }
-    },
-    "scripts": {
-        "post-autoload-dump": [
-            "@php vendor/bin/testbench package:discover --ansi"
-        ]
+  "name": "defectivecode/laravel-sqs-extended",
+  "description": "A Laravel queue driver that stores large SQS payloads on a disk to work around the AWS SQS payload size limits.",
+  "type": "laravel",
+  "license": "MIT",
+  "autoload": {
+    "psr-4": {
+      "DefectiveCode\\LaravelSqsExtended\\": "src"
     }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "DefectiveCode\\LaravelSqsExtended\\Tests\\": "tests"
+    }
+  },
+  "authors": [
+    {
+      "name": "Corey McCormick",
+      "email": "corey@defectivecode.com"
+    }
+  ],
+  "suggest": {
+    "laravel/vapor-core": "Required for SQS disk-based storage when using Laravel Vapor."
+  },
+  "require": {
+    "php": ">=8.5",
+    "aws/aws-sdk-php": "^3.408.0",
+    "illuminate/container": "^12.71 || ^13.40",
+    "illuminate/contracts": "^12.71 || ^13.40",
+    "illuminate/filesystem": "^12.71 || ^13.40",
+    "illuminate/queue": "^12.71 || ^13.40",
+    "illuminate/support": "^12.71 || ^13.40"
+  },
+  "require-dev": {
+    "laravel/pint": "^1.32.3",
+    "laravel/vapor-core": "^2.48",
+    "mockery/mockery": "^1.6.15",
+    "nunomaduro/collision": "^8.9.6",
+    "orchestra/testbench": "^10.12 || ^11.3",
+    "paragonie/random_compat": "^9.99.100",
+    "phpstan/phpstan": "^2.3.7",
+    "phpunit/phpunit": "^13.1.14",
+    "phpstan/phpstan-mockery": "^2.0"
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "DefectiveCode\\LaravelSqsExtended\\SqsDiskServiceProvider"
+      ]
+    }
+  },
+  "scripts": {
+    "post-autoload-dump": [
+      "@php vendor/bin/testbench package:discover --ansi"
+    ],
+    "test": "vendor/bin/phpunit",
+    "lint": "vendor/bin/pint",
+    "analyse": "vendor/bin/phpstan analyse --memory-limit=512M"
+  }
 }
