@@ -8,6 +8,9 @@ use Aws\Sqs\SqsClient;
 use Illuminate\Support\Arr;
 use Illuminate\Container\Container;
 
+/**
+ * @phpstan-import-type DiskOptions from ResolvesPointers
+ */
 trait SqsDiskBaseJob
 {
     use ResolvesPointers;
@@ -20,13 +23,6 @@ trait SqsDiskBaseJob
     protected $sqs;
 
     /**
-     * The Amazon SQS job instance.
-     *
-     * @var array
-     */
-    protected $job;
-
-    /**
      * Holds the raw body to prevent fetching the file from
      * the disk multiple times.
      */
@@ -34,14 +30,18 @@ trait SqsDiskBaseJob
 
     /**
      * The disk options for the job.
+     *
+     * @var DiskOptions
      */
     protected array $diskOptions;
 
     /**
      * Create a new job instance.
      *
+     * @param  array<string, mixed>  $job
      * @param  string  $connectionName
      * @param  string  $queue
+     * @param  DiskOptions  $diskOptions
      * @return void
      */
     public function __construct(Container $container, SqsClient $sqs, array $job, $connectionName, $queue, array $diskOptions)
@@ -78,9 +78,34 @@ trait SqsDiskBaseJob
         }
 
         if ($pointer = $this->resolvePointer()) {
-            return $this->cachedRawBody = $this->resolveDisk()->get($pointer);
+            /** @var string $body */
+            $body = $this->resolveDisk()->get($pointer);
+
+            return $this->cachedRawBody = $body;
         }
 
         return parent::getRawBody();
+    }
+
+    /**
+     * Resolves the job payload pointer.
+     */
+    protected function resolvePointer(): ?string
+    {
+        $body = $this->job['Body'] ?? null;
+        if (! is_string($body) || $body === '') {
+            return null;
+        }
+
+        $decoded = json_decode($body);
+        if (! is_object($decoded) || ! property_exists($decoded, 'pointer')) {
+            return null;
+        }
+
+        $pointer = $decoded->pointer;
+
+        return is_string($pointer)
+            ? $pointer
+            : (is_scalar($pointer) ? (string) $pointer : null);
     }
 }

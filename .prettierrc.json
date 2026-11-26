@@ -1,7 +1,15 @@
 {
-    "printWidth": 150,
-    "trailingComma": "es5",
-    "tabWidth": 4,
-    "singleQuote": true,
-    "plugins": ["@prettier/plugin-xml"]
+  "printWidth": 150,
+  "trailingComma": "es5",
+  "tabWidth": 4,
+  "singleQuote": true,
+  "plugins": ["@prettier/plugin-xml"],
+  "overrides": [
+    {
+      "files": ["*.json", "*.yml", "*.yaml"],
+      "options": {
+        "tabWidth": 2
+      }
+    }
+  ]
 }

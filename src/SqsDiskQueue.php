@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DefectiveCode\LaravelSqsExtended;
 
+use UnitEnum;
 use DateInterval;
 use Aws\Sqs\SqsClient;
 use DateTimeInterface;
@@ -11,12 +12,17 @@ use Illuminate\Support\Arr;
 use Illuminate\Queue\SqsQueue;
 use Illuminate\Contracts\Queue\Job;
 
+/**
+ * @phpstan-import-type DiskOptions from ResolvesPointers
+ */
 class SqsDiskQueue extends SqsQueue
 {
     use ResolvesPointers;
 
     /**
      * The disk options to save large payloads.
+     *
+     * @var DiskOptions
      */
     protected array $diskOptions;
 
@@ -24,7 +30,7 @@ class SqsDiskQueue extends SqsQueue
      * Create a new Amazon SQS queue instance.
      *
      * @param  string  $default
-     * @param  array  $diskOptions
+     * @param  DiskOptions  $diskOptions
      * @param  string  $prefix
      * @param  string  $suffix
      * @param  bool  $dispatchAfterCommit
@@ -47,8 +53,9 @@ class SqsDiskQueue extends SqsQueue
      * Push a raw payload onto the queue.
      *
      * @param  string  $payload
-     * @param  string|null  $queue
-     * @param  mixed  $delay
+     * @param  UnitEnum|string|null  $queue
+     * @param  array<string, mixed>  $options
+     * @param  DateTimeInterface|DateInterval|int  $delay
      * @return mixed
      */
     public function pushRaw($payload, $queue = null, array $options = [], $delay = 0)
@@ -83,7 +90,7 @@ class SqsDiskQueue extends SqsQueue
             $this->createPayload($job, $queue ?: $this->default, $data),
             $queue,
             $delay,
-            function ($payload, $queue) use ($delay) {
+            function (string $payload, UnitEnum|string|null $queue) use ($delay) {
                 return $this->pushRaw($payload, $queue, [], $delay);
             }
         );
@@ -92,9 +99,10 @@ class SqsDiskQueue extends SqsQueue
     /**
      * Build a single entry for the SendMessageBatch API.
      *
-     * @param  string  $id
+     * @param  int  $id
+     * @param  array{job: mixed, delay: mixed, payload: string}  $message
      * @param  string|null  $queue
-     * @return array
+     * @return array<mixed>
      */
     protected function prepareSendMessageBatchEntry($id, array $message, $queue)
     {
@@ -112,21 +120,20 @@ class SqsDiskQueue extends SqsQueue
      */
     public function pop($queue = null)
     {
-        $response = $this->sqs->receiveMessage([
+        /** @var list<array<string, mixed>>|null $messages */
+        $messages = $this->sqs->receiveMessage([
             'QueueUrl' => $queue = $this->getQueue($queue),
-            'AttributeNames' => ['ApproximateReceiveCount'],
-        ]);
+            'MessageSystemAttributeNames' => ['ApproximateReceiveCount'],
+        ])['Messages'];
 
-        if (! is_null($response['Messages']) && count($response['Messages']) > 0) {
-            return new SqsDiskJob(
-                $this->container,
-                $this->sqs,
-                $response['Messages'][0],
-                $this->connectionName,
-                $queue,
-                $this->diskOptions
-            );
-        }
+        return empty($messages) ? null : new SqsDiskJob(
+            $this->container,
+            $this->sqs,
+            $messages[0],
+            $this->connectionName,
+            $queue,
+            $this->diskOptions
+        );
     }
 
     /**
@@ -138,8 +145,8 @@ class SqsDiskQueue extends SqsQueue
     public function clear($queue = null)
     {
         return tap(parent::clear($queue), function (): void {
-            if (Arr::get($this->diskOptions, 'cleanup') && Arr::get($this->diskOptions, 'prefix')) {
-                $this->resolveDisk()->deleteDirectory(Arr::get($this->diskOptions, 'prefix'));
+            if (Arr::get($this->diskOptions, 'cleanup') && $prefix = $this->diskOptions['prefix'] ?? null) {
+                $this->resolveDisk()->deleteDirectory($prefix);
             }
         });
     }

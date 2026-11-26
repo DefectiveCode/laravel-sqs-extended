@@ -27,6 +27,34 @@ The threshold is read from the queue's own `MaximumMessageSize` attribute, so qu
 
 You may read the [documentation on our website](https://www.defectivecode.com/packages/laravel-sqs-extended).
 
+## Development
+
+Use PHP 8.5 or newer, Composer 2, and Bun 1.4.5. Install development dependencies with the discovery hook enabled:
+
+```sh
+composer install
+test -f bun.lock
+bun install --frozen-lockfile
+```
+
+Run the tests and quality checks:
+
+```sh
+composer validate --strict
+composer test
+composer test -- --order-by random
+composer analyse -- --no-progress
+composer lint -- --test
+bun --bun run format:check
+bun --bun run package:check
+```
+
+Replay random test order with the reported seed by adding `--random-order-seed <seed>`. CI checks both lowest and stable Composer dependency resolutions on PHP 8.5 against Laravel 12 and 13, with randomized test order. Static analysis runs against Laravel 13 only, because the batch entry override extends a method Laravel 12 does not have.
+
+Use `composer lint` and `bun --bun run format` to apply formatting. Bun is pinned in `package.json`, and formatter scripts force the Bun runtime. Keep `bun.lock` tracked; `composer.lock` remains ignored for independent library dependency resolution.
+
+Write any JavaScript in the package as TypeScript. The root `tsconfig.json` is strict and type-check only; run `bun --bun run typecheck` and add it to CI once the package has its first `.ts` file.
+
 # Support Guidelines
 
 Thanks for choosing our open source package! Please take a moment to check out these support guidelines. They'll help

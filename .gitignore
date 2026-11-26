@@ -2,8 +2,9 @@
 .php_cs
 .php_cs.cache
 .phpunit.result.cache
+.phpunit.cache
+.DS_Store
 *.lock
+!/bun.lock
 vendor
 node_modules
-.DS_Store
-package-lock.json

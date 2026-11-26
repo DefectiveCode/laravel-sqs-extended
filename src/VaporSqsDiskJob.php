@@ -20,13 +20,17 @@ class VaporSqsDiskJob extends VaporJob implements JobContract
 
         $payload['attempts'] = $this->attempts();
 
-        $body = $this->resolveMessageBody(json_encode($payload), $this->queue);
+        $body = $this->resolveMessageBody(json_encode($payload, JSON_THROW_ON_ERROR), $this->queue);
+
+        /** @var string $receiptHandle */
+        $receiptHandle = $this->job['ReceiptHandle'];
 
         $this->sqs->deleteMessage([
             'QueueUrl' => $this->queue,
-            'ReceiptHandle' => $this->job['ReceiptHandle'],
+            'ReceiptHandle' => $receiptHandle,
         ]);
 
+        /** @var string $jobId */
         $jobId = $this->sqs->sendMessage([
             'QueueUrl' => $this->queue,
             'MessageBody' => $body,

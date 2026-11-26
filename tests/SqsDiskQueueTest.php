@@ -9,6 +9,7 @@ use Aws\Result;
 use ArrayObject;
 use Aws\Command;
 use Aws\Sqs\SqsClient;
+use Mockery\MockInterface;
 use Aws\Exception\AwsException;
 use Illuminate\Container\Container;
 use Illuminate\Filesystem\FilesystemAdapter;
@@ -22,40 +23,30 @@ class SqsDiskQueueTest extends TestCase
 
     private string $mockedMessageId;
 
-    private string|false $mockedPayload;
+    private string $mockedPayload;
 
-    private string|false $mockedPointerPayload;
+    private string $mockedPointerPayload;
 
-    private string|false $mockedLargePayload;
+    private string $mockedLargePayload;
 
     private string $mockedReceiptHandle;
 
-    private array $mockedJobData;
+    private SqsClient&MockInterface $mockedSqsClient;
 
-    private SqsClient $mockedSqsClient;
+    private FilesystemAdapter&MockInterface $mockedFilesystemAdapter;
 
-    private FilesystemAdapter $mockedFilesystemAdapter;
-
-    private Container $mockedContainer;
+    private Container&MockInterface $mockedContainer;
 
     protected function setUp(): void
     {
         $this->mockedMessageId = 'e3cd03ee-59a3-4ad8-b0aa-ee2e3808ac81';
-        $this->mockedPayload = json_encode(['job' => 'foo', 'data' => ['data'], 'uuid' => $this->mockedMessageId]);
+        $this->mockedPayload = json_encode(['job' => 'foo', 'data' => ['data'], 'uuid' => $this->mockedMessageId], JSON_THROW_ON_ERROR);
         $this->mockedPointerPayload = json_encode([
             'pointer' => 'prefix/e3cd03ee-59a3-4ad8-b0aa-ee2e3808ac81.json',
             'job' => 'foo',
-        ]);
-        $this->mockedLargePayload = json_encode(['job' => 'foo', 'data' => [base64_encode(random_bytes(262144))], 'uuid' => $this->mockedMessageId]);
+        ], JSON_THROW_ON_ERROR);
+        $this->mockedLargePayload = json_encode(['job' => 'foo', 'data' => [base64_encode(random_bytes(262144))], 'uuid' => $this->mockedMessageId], JSON_THROW_ON_ERROR);
         $this->mockedReceiptHandle = '0NNAq8PwvXuWv5gMtS9DJ8qEdyiUwbAjpp45w2m6M4SJ1Y+PxCh7R930NRB8ylSacEmoSnW18bgd4nK\/O6ctE+VFVul4eD23mA07vVoSnPI4F\/voI1eNCp6Iax0ktGmhlNVzBwaZHEr91BRtqTRM3QKd2ASF8u+IQaSwyl\/DGK+P1+dqUOodvOVtExJwdyDLy1glZVgm85Yw9Jf5yZEEErqRwzYz\/qSigdvW4sm2l7e4phRol\/+IjMtovOyH\/ukueYdlVbQ4OshQLENhUKe7RNN5i6bE\/e5x9bnPhfj2gbM';
-
-        $this->mockedJobData = [
-            'Body' => $this->mockedPayload,
-            'MD5OfBody' => md5($this->mockedPayload),
-            'ReceiptHandle' => $this->mockedReceiptHandle,
-            'MessageId' => $this->mockedMessageId,
-            'Attributes' => ['ApproximateReceiveCount' => 1],
-        ];
 
         $this->mockedSqsClient = Mockery::mock(SqsClient::class);
         $this->mockedFilesystemAdapter = Mockery::mock(FilesystemAdapter::class);
@@ -179,7 +170,7 @@ class SqsDiskQueueTest extends TestCase
             ->andReturn($this->mockedFilesystemAdapter);
 
         $this->mockedSqsClient->shouldReceive('sendMessage')
-            ->with(Mockery::on(function ($arguments) {
+            ->with(Mockery::on(function (array $arguments) {
                 return $arguments['DelaySeconds'] === 10;
             }))
             ->once()
@@ -206,7 +197,7 @@ class SqsDiskQueueTest extends TestCase
             ->never();
 
         $this->mockedSqsClient->shouldReceive('sendMessage')
-            ->with(Mockery::on(function ($arguments) {
+            ->with(Mockery::on(function (array $arguments) {
                 return $arguments['DelaySeconds'] === 10;
             }))
             ->once()
@@ -246,8 +237,11 @@ class SqsDiskQueueTest extends TestCase
         $sqsDiskQueue->bulk(['foo']);
 
         $this->assertCount(1, $bodies);
-        $this->assertEquals('foo', json_decode($bodies[0])->job);
-        $this->assertObjectNotHasProperty('pointer', json_decode($bodies[0]));
+        $this->assertNotNull($bodies[0]);
+        $decodedBody = json_decode($bodies[0], true);
+        $this->assertIsArray($decodedBody);
+        $this->assertEquals('foo', $decodedBody['job']);
+        $this->assertArrayNotHasKey('pointer', $decodedBody);
     }
 
     public function testItPushesLargeBatchedPayloadsToADisk(): void
@@ -278,9 +272,11 @@ class SqsDiskQueueTest extends TestCase
 
         $this->assertCount(1, $bodies);
 
-        $decodedBody = json_decode($bodies[0]);
-        $this->assertEquals('foo', $decodedBody->job);
-        $this->assertNotNull($decodedBody->pointer);
+        $this->assertNotNull($bodies[0]);
+        $decodedBody = json_decode($bodies[0], true);
+        $this->assertIsArray($decodedBody);
+        $this->assertEquals('foo', $decodedBody['job']);
+        $this->assertNotNull($decodedBody['pointer']);
     }
 
     public function testItKeepsPayloadsInlineWhenTheQueueAllowsALargerMaximumMessageSize(): void
@@ -499,13 +495,17 @@ class SqsDiskQueueTest extends TestCase
      *
      * Laravel dispatches batches through SendMessageBatch from 13.19 onward, and
      * one SendMessage per job before that.
+     *
+     * @return ArrayObject<int, string>
      */
     protected function captureBatchedMessageBodies(): ArrayObject
     {
+        /** @var ArrayObject<int, string> $bodies */
         $bodies = new ArrayObject;
 
         $this->mockedSqsClient->shouldReceive('sendMessage')
-            ->with(Mockery::on(function ($arguments) use ($bodies) {
+            ->with(Mockery::on(function (array $arguments) use ($bodies) {
+                /** @var array{MessageBody: string} $arguments */
                 $bodies->append($arguments['MessageBody']);
 
                 return true;
@@ -517,8 +517,11 @@ class SqsDiskQueueTest extends TestCase
             ->andReturn('message-id');
 
         $this->mockedSqsClient->shouldReceive('sendMessageBatch')
-            ->with(Mockery::on(function ($arguments) use ($bodies) {
-                foreach ($arguments['Entries'] as $entry) {
+            ->with(Mockery::on(function (array $arguments) use ($bodies) {
+                /** @var list<array{MessageBody: string}> $entries */
+                $entries = $arguments['Entries'];
+
+                foreach ($entries as $entry) {
                     $bodies->append($entry['MessageBody']);
                 }
 

@@ -10,11 +10,11 @@ Please email your findings directly to our Security Team at security@defectiveco
 
 When reporting a security vulnerability, include as much information as possible, such as:
 
--   A clear and concise description of the issue
--   Steps to reproduce the vulnerability
--   Affected software and versions
--   Potential impact of the vulnerability
--   A proof of concept demonstrating the exploit, if possible
+- A clear and concise description of the issue
+- Steps to reproduce the vulnerability
+- Affected software and versions
+- Potential impact of the vulnerability
+- A proof of concept demonstrating the exploit, if possible
 
 This comprehensive information will enable our team to better understand and promptly address the issue.
 
@@ -22,10 +22,10 @@ This comprehensive information will enable our team to better understand and pro
 
 Upon receiving your report, we commit to:
 
--   Acknowledge receipt of your report within 72 hours
--   Review and evaluate the vulnerability in a timely manner
--   Provide you with updates on our progress, as appropriate
--   Fix and disclose the verified vulnerability within 30 days of receipt, unless extenuating circumstances require a longer resolution time
+- Acknowledge receipt of your report within 72 hours
+- Review and evaluate the vulnerability in a timely manner
+- Provide you with updates on our progress, as appropriate
+- Fix and disclose the verified vulnerability within 30 days of receipt, unless extenuating circumstances require a longer resolution time
 
 ## 4. Credit and Recognition
 

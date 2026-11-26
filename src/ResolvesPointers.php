@@ -8,7 +8,11 @@ use Illuminate\Support\Arr;
 use Aws\Exception\AwsException;
 use League\Flysystem\UnableToWriteFile;
 use Illuminate\Filesystem\FilesystemAdapter;
+use Illuminate\Filesystem\FilesystemManager;
 
+/**
+ * @phpstan-type DiskOptions array{disk?: string|null, prefix?: string|null, always_store?: bool, cleanup?: bool, max_size?: int|string|null}
+ */
 trait ResolvesPointers
 {
     /**
@@ -29,6 +33,8 @@ trait ResolvesPointers
 
     /**
      * Cache of resolved thresholds, keyed by queue URL.
+     *
+     * @var array<string, int>
      */
     protected array $queueMaxLengths = [];
 
@@ -38,8 +44,9 @@ trait ResolvesPointers
             return $payload;
         }
 
+        /** @var object{uuid: string, job?: string} $decodedPayload */
         $decodedPayload = json_decode($payload);
-        $filepath = Arr::get($this->diskOptions, 'prefix', '')."/{$decodedPayload->uuid}.json";
+        $filepath = ($this->diskOptions['prefix'] ?? '')."/{$decodedPayload->uuid}.json";
 
         if ($this->resolveDisk()->put($filepath, $payload) === false) {
             throw UnableToWriteFile::atLocation($filepath);
@@ -48,7 +55,7 @@ trait ResolvesPointers
         return json_encode([
             'pointer' => $filepath,
             'job' => $decodedPayload->job ?? null,
-        ]);
+        ], JSON_THROW_ON_ERROR);
     }
 
     /**
@@ -56,7 +63,7 @@ trait ResolvesPointers
      */
     protected function maxSqsLength(?string $queueUrl): int
     {
-        if ($configured = Arr::get($this->diskOptions, 'max_size')) {
+        if ($configured = $this->diskOptions['max_size'] ?? null) {
             return (int) $configured;
         }
 
@@ -76,13 +83,16 @@ trait ResolvesPointers
     protected function detectMaxSqsLength(string $queueUrl): int
     {
         try {
-            $maximum = (int) $this->sqs->getQueueAttributes([
+            /** @var array{MaximumMessageSize: string} $attributes */
+            $attributes = $this->sqs->getQueueAttributes([
                 'QueueUrl' => $queueUrl,
                 'AttributeNames' => ['MaximumMessageSize'],
-            ])['Attributes']['MaximumMessageSize'];
+            ])['Attributes'];
         } catch (AwsException) {
             return self::MAX_SQS_LENGTH;
         }
+
+        $maximum = (int) $attributes['MaximumMessageSize'];
 
         return $maximum > self::MESSAGE_SIZE_MARGIN
             ? $maximum - self::MESSAGE_SIZE_MARGIN
@@ -90,32 +100,16 @@ trait ResolvesPointers
     }
 
     /**
-     * Resolves the job payload pointer.
-     */
-    protected function resolvePointer(): ?string
-    {
-        $body = $this->job['Body'] ?? null;
-        if (! is_string($body) || $body === '') {
-            return null;
-        }
-
-        $decoded = json_decode($body);
-        if (! is_object($decoded) || ! property_exists($decoded, 'pointer')) {
-            return null;
-        }
-
-        $pointer = $decoded->pointer;
-
-        return is_string($pointer)
-            ? $pointer
-            : (is_scalar($pointer) ? (string) $pointer : null);
-    }
-
-    /**
      * Resolves the configured queue disk that stores large payloads.
      */
     protected function resolveDisk(): FilesystemAdapter
     {
-        return $this->container->make('filesystem')->disk(Arr::get($this->diskOptions, 'disk'));
+        /** @var FilesystemManager $filesystem */
+        $filesystem = $this->container->make('filesystem');
+
+        /** @var FilesystemAdapter $disk */
+        $disk = $filesystem->disk($this->diskOptions['disk'] ?? null);
+
+        return $disk;
     }
 }
