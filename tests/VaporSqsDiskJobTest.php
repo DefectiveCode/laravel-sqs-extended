@@ -10,6 +10,7 @@ use Mockery\MockInterface;
 use Illuminate\Container\Container;
 use Laravel\Vapor\Queue\JobAttempts;
 use League\Flysystem\UnableToWriteFile;
+use Illuminate\Contracts\Filesystem\Factory;
 use Illuminate\Filesystem\FilesystemAdapter;
 use DefectiveCode\LaravelSqsExtended\SqsDiskQueue;
 use DefectiveCode\LaravelSqsExtended\VaporSqsDiskJob;
@@ -137,7 +138,7 @@ class VaporSqsDiskJobTest extends TestCase
             ->once();
 
         $this->mockedContainer->shouldReceive('make')
-            ->with('filesystem')
+            ->with(Factory::class)
             ->andReturn($this->mockedFilesystemAdapter);
 
         $this->expectJobAttemptsTransfer();
@@ -170,7 +171,7 @@ class VaporSqsDiskJobTest extends TestCase
         ], JSON_THROW_ON_ERROR);
 
         $this->mockedContainer->shouldReceive('make')
-            ->with('filesystem')
+            ->with(Factory::class)
             ->never();
 
         $this->expectJobAttemptsTransfer();
@@ -209,7 +210,7 @@ class VaporSqsDiskJobTest extends TestCase
             ->andReturnFalse();
 
         $this->mockedContainer->shouldReceive('make')
-            ->with('filesystem')
+            ->with(Factory::class)
             ->andReturn($this->mockedFilesystemAdapter);
 
         $this->expectJobAttemptsGet();
@@ -308,7 +309,7 @@ class VaporSqsDiskJobTest extends TestCase
             ->once();
 
         $this->mockedContainer->shouldReceive('make')
-            ->with('filesystem')
+            ->with(Factory::class)
             ->andReturn($this->mockedFilesystemAdapter);
 
         $this->mockedSqsClient->shouldReceive('sendMessage')

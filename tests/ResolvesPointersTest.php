@@ -8,10 +8,9 @@ use Mockery;
 use ReflectionMethod;
 use Aws\Sqs\SqsClient;
 use Illuminate\Container\Container;
-use Illuminate\Filesystem\FilesystemAdapter;
-use Illuminate\Filesystem\FilesystemManager;
+use Illuminate\Contracts\Filesystem\Factory;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use DefectiveCode\LaravelSqsExtended\SqsDiskJob;
-use DefectiveCode\LaravelSqsExtended\ResolvesPointers;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 
 class ResolvesPointersTest extends TestCase
@@ -50,48 +49,28 @@ class ResolvesPointersTest extends TestCase
 
     public function testItResolvesTheConfiguredDiskAdapter(): void
     {
-        $subject = $this->makeSubject(['disk' => 'archive']);
-
-        $manager = Mockery::mock(FilesystemManager::class);
-        $adapter = Mockery::mock(FilesystemAdapter::class);
+        $manager = Mockery::mock(Factory::class);
+        $disk = Mockery::mock(Filesystem::class);
 
         $manager->shouldReceive('disk')
             ->once()
             ->with('archive')
-            ->andReturn($adapter);
+            ->andReturn($disk);
 
-        $subject->container->instance('filesystem', $manager);
+        $container = new Container;
+        $container->instance(Factory::class, $manager);
 
-        $this->assertSame($adapter, $this->callResolveDisk($subject));
-    }
+        $subject = $this->makeJob('{}', $container, ['disk' => 'archive']);
 
-    protected function makeJob(string $body): SqsDiskJob
-    {
-        return new SqsDiskJob(new Container, Mockery::mock(SqsClient::class), ['Body' => $body], 'connection', 'queue', ['disk' => 's3']);
+        $this->assertSame($disk, $this->callResolveDisk($subject));
     }
 
     /**
      * @param  array{disk: string}  $diskOptions
-     * @return object{container: Container}
      */
-    protected function makeSubject(array $diskOptions): object
+    protected function makeJob(string $body, Container $container = new Container, array $diskOptions = ['disk' => 's3']): SqsDiskJob
     {
-        return new class($diskOptions)
-        {
-            use ResolvesPointers;
-
-            public Container $container;
-
-            protected SqsClient $sqs;
-
-            /**
-             * @param  array{disk: string}  $diskOptions
-             */
-            public function __construct(public array $diskOptions)
-            {
-                $this->container = new Container;
-            }
-        };
+        return new SqsDiskJob($container, Mockery::mock(SqsClient::class), ['Body' => $body], 'connection', 'queue', $diskOptions);
     }
 
     protected function callResolvePointer(object $obj): ?string
@@ -103,10 +82,10 @@ class ResolvesPointersTest extends TestCase
         return $pointer;
     }
 
-    protected function callResolveDisk(object $obj): FilesystemAdapter
+    protected function callResolveDisk(object $obj): Filesystem
     {
         $method = new ReflectionMethod($obj, 'resolveDisk');
-        /** @var FilesystemAdapter $disk */
+        /** @var Filesystem $disk */
         $disk = $method->invoke($obj);
 
         return $disk;

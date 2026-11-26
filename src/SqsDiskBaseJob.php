@@ -7,6 +7,7 @@ namespace DefectiveCode\LaravelSqsExtended;
 use Aws\Sqs\SqsClient;
 use Illuminate\Support\Arr;
 use Illuminate\Container\Container;
+use League\Flysystem\UnableToReadFile;
 
 /**
  * @phpstan-import-type DiskOptions from ResolvesPointers
@@ -78,8 +79,11 @@ trait SqsDiskBaseJob
         }
 
         if ($pointer = $this->resolvePointer()) {
-            /** @var string $body */
             $body = $this->resolveDisk()->get($pointer);
+
+            if ($body === null) {
+                throw UnableToReadFile::fromLocation($pointer);
+            }
 
             return $this->cachedRawBody = $body;
         }

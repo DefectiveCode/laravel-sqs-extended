@@ -10,8 +10,10 @@ use ArrayObject;
 use Aws\Command;
 use Aws\Sqs\SqsClient;
 use Mockery\MockInterface;
+use UnexpectedValueException;
 use Aws\Exception\AwsException;
 use Illuminate\Container\Container;
+use Illuminate\Contracts\Filesystem\Factory;
 use Illuminate\Filesystem\FilesystemAdapter;
 use DefectiveCode\LaravelSqsExtended\SqsDiskJob;
 use DefectiveCode\LaravelSqsExtended\SqsDiskQueue;
@@ -93,7 +95,7 @@ class SqsDiskQueueTest extends TestCase
             ->once();
 
         $this->mockedContainer->shouldReceive('make')
-            ->with('filesystem')
+            ->with(Factory::class)
             ->andReturn($this->mockedFilesystemAdapter);
 
         $this->mockedSqsClient->shouldReceive('sendMessage')
@@ -130,7 +132,7 @@ class SqsDiskQueueTest extends TestCase
             ->once();
 
         $this->mockedContainer->shouldReceive('make')
-            ->with('filesystem')
+            ->with(Factory::class)
             ->andReturn($this->mockedFilesystemAdapter);
 
         $this->mockedSqsClient->shouldReceive('sendMessage')
@@ -166,7 +168,7 @@ class SqsDiskQueueTest extends TestCase
             ->once();
 
         $this->mockedContainer->shouldReceive('make')
-            ->with('filesystem')
+            ->with(Factory::class)
             ->andReturn($this->mockedFilesystemAdapter);
 
         $this->mockedSqsClient->shouldReceive('sendMessage')
@@ -254,7 +256,7 @@ class SqsDiskQueueTest extends TestCase
             ->once();
 
         $this->mockedContainer->shouldReceive('make')
-            ->with('filesystem')
+            ->with(Factory::class)
             ->andReturn($this->mockedFilesystemAdapter);
 
         $bodies = $this->captureBatchedMessageBodies();
@@ -324,7 +326,7 @@ class SqsDiskQueueTest extends TestCase
             ->once();
 
         $this->mockedContainer->shouldReceive('make')
-            ->with('filesystem')
+            ->with(Factory::class)
             ->andReturn($this->mockedFilesystemAdapter);
 
         $sqsClient->shouldReceive('sendMessage')
@@ -368,7 +370,7 @@ class SqsDiskQueueTest extends TestCase
             ->once();
 
         $this->mockedContainer->shouldReceive('make')
-            ->with('filesystem')
+            ->with(Factory::class)
             ->andReturn($this->mockedFilesystemAdapter);
 
         $sqsClient->shouldReceive('sendMessage')
@@ -392,6 +394,44 @@ class SqsDiskQueueTest extends TestCase
         $sqsDiskQueue = new SqsDiskQueue($sqsClient, 'default', $diskOptions);
         $sqsDiskQueue->setContainer($this->mockedContainer);
         $sqsDiskQueue->pushRaw($this->mockedLargePayload);
+    }
+
+    public function testItFallsBackToTheDefaultMaxLengthWhenTheQueueOmitsTheAttribute(): void
+    {
+        $sqsClient = Mockery::mock(SqsClient::class);
+
+        $sqsClient->shouldReceive('getQueueAttributes')
+            ->once()
+            ->andReturn(new Result);
+
+        $this->mockedContainer->shouldReceive('make')
+            ->never();
+
+        $sqsClient->shouldReceive('sendMessage')
+            ->with([
+                'QueueUrl' => '/default',
+                'MessageBody' => $this->mockedPayload,
+            ])
+            ->once()
+            ->andReturnSelf();
+
+        $sqsClient->shouldReceive('get')
+            ->once();
+
+        $sqsDiskQueue = new SqsDiskQueue($sqsClient, 'default', ['disk' => 's3', 'prefix' => 'prefix']);
+        $sqsDiskQueue->setContainer($this->mockedContainer);
+        $sqsDiskQueue->pushRaw($this->mockedPayload);
+    }
+
+    public function testItRefusesToStoreAPayloadWithoutAStringUuid(): void
+    {
+        $this->mockedSqsClient->shouldNotReceive('sendMessage');
+
+        $sqsDiskQueue = new SqsDiskQueue($this->mockedSqsClient, 'default', ['always_store' => true, 'disk' => 's3']);
+
+        $this->expectException(UnexpectedValueException::class);
+
+        $sqsDiskQueue->pushRaw(json_encode(['job' => 'foo', 'uuid' => 123], JSON_THROW_ON_ERROR));
     }
 
     public function testItOnlyReadsTheQueueAttributeOncePerQueue(): void
@@ -427,6 +467,10 @@ class SqsDiskQueueTest extends TestCase
     public function testItCreatesANewSqsDiskJobWhenPopped(): void
     {
         $this->mockedSqsClient->shouldReceive('receiveMessage')
+            ->with([
+                'QueueUrl' => '/default',
+                'MessageSystemAttributeNames' => ['ApproximateReceiveCount'],
+            ])
             ->once()
             ->andReturn([
                 'Messages' => [
@@ -435,6 +479,7 @@ class SqsDiskQueueTest extends TestCase
                         'MD5OfBody' => md5($this->mockedPayload),
                         'ReceiptHandle' => $this->mockedReceiptHandle,
                         'MessageId' => $this->mockedMessageId,
+                        'Attributes' => ['ApproximateReceiveCount' => '3'],
                     ],
                 ],
             ]);
@@ -451,6 +496,7 @@ class SqsDiskQueueTest extends TestCase
         $job = $sqsDiskQueue->pop();
 
         $this->assertInstanceOf(SqsDiskJob::class, $job);
+        $this->assertSame(3, $job->attempts());
     }
 
     public function testItClearsTheDiskWhenQueueisCleared(): void
@@ -464,7 +510,7 @@ class SqsDiskQueueTest extends TestCase
             ->once();
 
         $this->mockedContainer->shouldReceive('make')
-            ->with('filesystem')
+            ->with(Factory::class)
             ->andReturn($this->mockedFilesystemAdapter);
 
         $this->mockedSqsClient->shouldReceive('getQueueAttributes')

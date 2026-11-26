@@ -8,6 +8,8 @@ use Mockery;
 use Aws\Sqs\SqsClient;
 use Mockery\MockInterface;
 use Illuminate\Container\Container;
+use League\Flysystem\UnableToReadFile;
+use Illuminate\Contracts\Filesystem\Factory;
 use Illuminate\Filesystem\FilesystemAdapter;
 use DefectiveCode\LaravelSqsExtended\SqsDiskJob;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
@@ -62,7 +64,7 @@ class SqsDiskJobTest extends TestCase
             ->andReturnSelf();
 
         $this->mockedContainer->shouldReceive('make')
-            ->with('filesystem')
+            ->with(Factory::class)
             ->once()
             ->andReturn($this->mockedFilesystemAdapter);
 
@@ -90,7 +92,7 @@ class SqsDiskJobTest extends TestCase
     public function testItLeavesTheJobOnTheDiskIfCleanupIsDisabled(): void
     {
         $this->mockedContainer->shouldReceive('make')
-            ->with('filesystem')
+            ->with(Factory::class)
             ->never();
 
         $this->mockedSqsClient->shouldReceive('deleteMessage')
@@ -115,6 +117,34 @@ class SqsDiskJobTest extends TestCase
         $sqsDiskJob->delete();
     }
 
+    public function testItThrowsWhenThePointedFileCannotBeRead(): void
+    {
+        $this->mockedFilesystemAdapter->shouldReceive('disk')
+            ->with('s3')
+            ->andReturnSelf();
+
+        $this->mockedFilesystemAdapter->shouldReceive('get')
+            ->once()
+            ->andReturnNull();
+
+        $this->mockedContainer->shouldReceive('make')
+            ->with(Factory::class)
+            ->andReturn($this->mockedFilesystemAdapter);
+
+        $sqsDiskJob = new SqsDiskJob(
+            $this->mockedContainer,
+            $this->mockedSqsClient,
+            $this->mockedJobData,
+            'connection',
+            'queue',
+            ['disk' => 's3']
+        );
+
+        $this->expectException(UnableToReadFile::class);
+
+        $sqsDiskJob->getRawBody();
+    }
+
     public function testItReturnsTheRawBodyFromTheDiskIfAPointerExists(): void
     {
         $jobData = json_encode([
@@ -133,7 +163,7 @@ class SqsDiskJobTest extends TestCase
             ->andReturn($jobData);
 
         $this->mockedContainer->shouldReceive('make')
-            ->with('filesystem')
+            ->with(Factory::class)
             ->andReturn($this->mockedFilesystemAdapter);
 
         $diskOptions = [

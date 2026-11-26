@@ -4,6 +4,11 @@
 
 Laravel SQS Extended is a Laravel queue driver that was designed to work around the AWS SQS payload size limits. This queue driver will automatically serialize large payloads to a disk (typically S3) and then unserialize them at run time. This package took inspiration from https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-s3-messages.html.
 
+## Requirements
+
+- PHP 8.5 or newer
+- Laravel 12.71 or newer, or Laravel 13.40 or newer
+
 ## Migration from Simple SQS Extended Client
 
 1. Remove `simplesoftwareio/simple-sqs-extended-client` package from your project.
@@ -68,15 +73,15 @@ The old configuration is backwards compatible with the new package. The only cha
 
 AWS raised the maximum SQS payload from 256 KiB to 1 MiB in August 2025, but `MaximumMessageSize` is a per-queue attribute — queues created before that change keep the older 262144 byte value until you raise it. Rather than assume either limit, this package reads the attribute from the queue and offloads only what genuinely will not fit.
 
-The threshold is resolved in the following order, and the first match wins. A payload is stored on the disk when its length is greater than or equal to the resolved threshold.
+A payload is stored on the disk when its length is greater than or equal to the resolved threshold, or when `always_store` is `true`. The threshold is resolved first, in the order below, and the first match wins. Because `always_store` is checked afterwards, enabling it does not by itself skip reading the queue attribute.
 
-| Condition                                       | Threshold               | Reads the queue attribute |
-| ----------------------------------------------- | ----------------------- | ------------------------- |
-| `always_store` is `true`                        | Every payload is stored | No                        |
-| `max_size` is set                               | The configured value    | No                        |
-| Queue reports `262144` (the pre-2025 default)   | 250000                  | Yes                       |
-| Queue reports `1048576` (raised to the maximum) | 1036432                 | Yes                       |
-| Attribute cannot be read                        | 250000                  | Attempted once            |
+| Condition                                       | Threshold               | Reads the queue attribute     |
+| ----------------------------------------------- | ----------------------- | ----------------------------- |
+| `max_size` is set                               | The configured value    | No                            |
+| Queue reports `262144` (the pre-2025 default)   | 250000                  | Yes                           |
+| Queue reports `1048576` (raised to the maximum) | 1036432                 | Yes                           |
+| Attribute cannot be read                        | 250000                  | Attempted once                |
+| `always_store` is `true`                        | Every payload is stored | Yes, unless `max_size` is set |
 
 The reserved headroom of 12144 bytes covers per-message overhead, and is sized so a queue left at the 262144 byte default resolves to the 250000 byte threshold used by earlier versions of this package. Upgrading does not change behavior until you raise the queue's own limit.
 

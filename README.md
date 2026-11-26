@@ -49,7 +49,7 @@ bun --bun run format:check
 bun --bun run package:check
 ```
 
-Replay random test order with the reported seed by adding `--random-order-seed <seed>`. CI checks both lowest and stable Composer dependency resolutions on PHP 8.5 against Laravel 12 and 13, with randomized test order. Static analysis runs against Laravel 13 only, because the batch entry override extends a method Laravel 12 does not have.
+Replay random test order with the reported seed by adding `--random-order-seed <seed>`. CI checks both lowest and stable Composer dependency resolutions on PHP 8.5 against Laravel 12 and 13, with randomized test order. Lowest resolution installs the oldest releases Composer allows, which for Laravel are the floors in `composer.json` (12.71 and 13.40); releases blocked by security advisories are skipped. Static analysis runs against Laravel 13 only, because the batch entry override extends a method Laravel 12 does not have.
 
 Use `composer lint` and `bun --bun run format` to apply formatting. Bun is pinned in `package.json`, and formatter scripts force the Bun runtime. Keep `bun.lock` tracked; `composer.lock` remains ignored for independent library dependency resolution.
 

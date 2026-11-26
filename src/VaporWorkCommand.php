@@ -32,7 +32,7 @@ class VaporWorkCommand extends LaravelVaporWorkCommand
         $container = $this->laravel;
 
         /** @var DiskOptions $diskOptions */
-        $diskOptions = config('queue.connections.sqs.disk_options');
+        $diskOptions = config()->array('queue.connections.sqs.disk_options');
 
         return new VaporSqsDiskJob(
             $container,
